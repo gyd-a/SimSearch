@@ -1,0 +1,9 @@
+syntax = "proto3";
+package etcdserverpb;
+
+// 由于请求的是http接口，和原生的grpc response有一些差别，所以进行二次封装
+import "etcd_idl/rpc.proto";
+
+message HttpLeaseKeepAliveResponse {
+    LeaseKeepAliveResponse result = 1;
+}

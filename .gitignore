@@ -1,0 +1,8 @@
+build*
+bld
+log*
+brpc
+braft
+*main
+gen_idl
+datas

@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+import "rpc_service_idl/common_rpc.proto";  // 引用其他 proto 文件
+
+option cc_generic_services = true;
+
+
+package ps_rpc;
+
+
+
+
+message PsNodeInfo {
+    int64  ps_id                  = 1;
+    string ps_ip                  = 2;
+    int32  ps_port                = 3;
+
+    string msg                    = 100;
+}
+
+
+
+// -----------------表操作-----------------
+message CreateSpaceRequest {
+    common_rpc.Space         space = 1;
+    common_rpc.Partition    cur_partition = 2;
+}
+
+message CreateSpaceResponse {
+    common_rpc.RespStatus status = 1;
+}
+// --------------------------------------
+
+message PingRequest {
+    optional string     ping = 1;
+}
+message PingResponse {
+    common_rpc.RespStatus status = 1;
+}
+
+service PsService {
+    rpc MockGet(common_rpc.MockGetRequest) returns(common_rpc.MockGetResponse);
+    rpc Ping(PingRequest) returns(PingResponse);
+    rpc CreateSpace(CreateSpaceRequest) returns(CreateSpaceResponse);
+    rpc DeleteSpace(common_rpc.DeleteSpaceRequest) returns(common_rpc.DeleteSpaceResponse);
+    rpc Get(common_rpc.GetRequest) returns(common_rpc.GetResponse);
+    rpc Search(common_rpc.SearchRequest) returns(common_rpc.SearchResponse);
+};
+
+

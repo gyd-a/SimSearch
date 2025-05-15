@@ -1,0 +1,43 @@
+
+syntax = "proto3";
+
+package raft_rpc;
+
+option cc_generic_services = true;
+
+message DocInfo {
+    optional string  key                 = 1;
+    int32            doc_len             = 2;
+    string           msg                 = 3;
+}
+
+enum WriteType {
+    UPSERT = 0;
+    DELETE = 1;
+}
+enum KeyType {
+    INT64  = 0;
+    STRING = 1;
+}
+
+message BlockRequest {
+    repeated DocInfo            docs_info        = 1;
+    optional KeyType            key_type         = 2;
+    optional WriteType          write_type       = 3;
+    optional string             db_name          = 4;
+    optional string             space_name       = 5;
+    int32 test_id                                = 6;
+}
+
+message BlockResponse {
+    optional bool               success                  = 1;
+    string                      redirect                 = 2;
+    repeated DocInfo            docs_info                = 3;
+    KeyType                     key_type                 = 4;
+    string                      msg                      = 5;
+}
+
+service PsRaftService {
+    rpc write(BlockRequest) returns(BlockResponse);
+    rpc read(BlockRequest) returns(BlockResponse);
+};

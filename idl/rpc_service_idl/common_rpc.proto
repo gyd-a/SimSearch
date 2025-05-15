@@ -1,0 +1,149 @@
+
+syntax = "proto3";
+
+package common_rpc;
+
+message Index {
+    optional string                      type = 1;
+    optional string                    params = 2;
+}
+
+message Field {
+    optional string                      name = 1;
+    optional string                      type = 2;
+    uint32                 dimension = 3;
+    Index                      index = 4;
+}
+
+// 也是ps创建Space的request
+message Space {
+    optional string                   db_name = 1;
+    optional string                      name = 2;
+    optional uint32             partition_num = 3;
+    optional uint32               replica_num = 4;
+    repeated Field            fields = 5;
+    repeated Partition    partitions = 6;
+}
+
+
+message Partition {
+    optional int32              partition_id = 1;
+    optional string               group_name = 2;
+    repeated Replica                replicas = 3;
+	optional string              create_time = 4;        // 2022-12-12 12:12:12+毫秒时间戳
+	optional string              update_time = 5;        // 2022-12-12 12:12:12+毫秒时间戳
+}
+
+message Replica {
+    optional int32            ps_id = 1;
+    optional string           ps_ip = 2;
+    optional int32          ps_port = 3;
+    optional int32        is_leader = 4;
+    optional string     node_status = 5;
+    optional string             msg = 6;
+}
+
+message RespStatus {
+    optional int32                       code = 1;
+    optional string                       msg = 2;
+}
+
+
+message Document {
+    optional string                       _id = 1;
+    repeated int64       field_int62 = 2;
+    repeated uint64     field_uint62 = 3;
+    repeated int32       field_int32 = 4;
+    repeated uint32     field_uint32 = 5;
+    repeated float       field_float = 6;
+    repeated double     field_double = 7;
+    repeated string     field_string = 8;
+    optional float                      score = 9;
+}
+
+// -----------------数据操作-----------------
+message UpsertRequest {
+    optional string                          db_name = 1;
+    optional string                       space_name = 2;
+    repeated common_rpc.Document  documents = 3;
+}
+
+message UpsertResponse {
+    common_rpc.RespStatus status = 1;
+}
+
+message DeleteRequest {
+    optional string    db_name = 1;
+    optional string space_name = 2;
+}
+
+message DeleteResponse {
+    common_rpc.RespStatus status = 1;
+}
+// --------------------------------------
+
+
+// -----------------数据操作-----------------
+message GetRequest {
+    repeated string _id = 1;
+}
+
+message GetResponse {
+    common_rpc.RespStatus status = 1;
+    repeated common_rpc.Document  documents = 2;
+}
+
+message SearchRequest {
+    repeated string _id = 1;
+}
+
+message SearchResponse {
+    common_rpc.RespStatus status = 1;
+    repeated common_rpc.Document  documents = 2;
+}
+// --------------------------------------
+
+message DeleteSpaceRequest {
+    optional string              db_name = 1;
+    optional string              space_name = 2;
+}
+
+message DeleteSpaceResponse {
+    common_rpc.RespStatus status = 1;
+}
+
+// ------------------mock-----------------
+message MockDoc {
+    optional string     key = 1;
+    optional string     val = 2;
+    string              msg = 3;
+}
+
+message MockUpsertRequest {
+    repeated MockDoc           docs         = 1;
+    optional int32             key_type     = 2;
+    optional string            db_name      = 3;
+    optional string            space_name   = 4;
+
+    int32 test_id                      = 5;
+}
+
+message MockUpsertResponse {
+    optional int32     code     = 1;
+    optional string    msg      = 2;
+    repeated MockDoc   docs_res = 3;
+}
+
+message MockGetRequest {
+    repeated string   keys = 1;
+    optional int32    key_type = 2;
+    optional string db_name = 4;
+    optional string space_name = 5;
+}
+
+message MockGetResponse {
+    optional int32 code             = 1;
+    optional string msg             = 2;
+    repeated MockDoc   docs = 3;
+}
+// ---------------------------------------

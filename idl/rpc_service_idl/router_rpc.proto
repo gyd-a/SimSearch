@@ -1,0 +1,42 @@
+
+syntax = "proto3";
+
+import "rpc_service_idl/common_rpc.proto";  // 引用其他 proto 文件
+import "google/protobuf/empty.proto";
+
+option cc_generic_services = true;
+
+package router_rpc;
+
+
+message LocalSpaces {
+    repeated common_rpc.Space   spaces = 1;
+}
+
+message AddSpaceRequest {
+    common_rpc.Space           space = 1;
+}
+
+message AddSpaceResponse {
+    common_rpc.RespStatus     status = 1;
+}
+
+service RouterSpaceService {
+    // 写
+    rpc AddSpace(AddSpaceRequest) returns(AddSpaceResponse);
+    rpc DeleteSpace(common_rpc.DeleteSpaceRequest) returns(common_rpc.DeleteSpaceResponse);
+    // 读
+    rpc SpaceList(google.protobuf.Empty) returns(LocalSpaces);
+}
+
+service RouterDocService {
+    // mok rpc
+    rpc MockUpsert(common_rpc.MockUpsertRequest) returns(common_rpc.MockUpsertResponse);
+    rpc MockGet(common_rpc.MockGetRequest) returns(common_rpc.MockGetResponse);
+    // 数据写操作
+    rpc Upsert(common_rpc.UpsertRequest) returns(common_rpc.UpsertResponse);
+    rpc Delete(common_rpc.DeleteRequest) returns(common_rpc.DeleteResponse);
+    // 数据读操作
+    rpc Get(common_rpc.GetRequest) returns(common_rpc.GetResponse);
+    rpc Search(common_rpc.SearchRequest) returns(common_rpc.SearchResponse);
+}

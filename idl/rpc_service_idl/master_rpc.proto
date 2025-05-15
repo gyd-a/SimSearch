@@ -1,0 +1,26 @@
+
+syntax = "proto3";
+
+import "rpc_service_idl/common_rpc.proto";  // 引用其他 proto 文件
+option cc_generic_services = true;
+
+package master_rpc;
+
+message MasterGenIdRequest {
+    optional int64  id      = 1;
+}
+
+message MasterGenIdResponse {
+    optional int64  id      = 1;
+    optional string msg     = 2;
+}
+
+message SpaceListRequest {
+    optional string                         name_prefix = 1;
+}
+
+message SpaceListRespone {
+	optional int32                                 code = 1;
+	optional string                                 msg = 2;
+	repeated common_rpc.Space       space_list = 3;
+}

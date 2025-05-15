@@ -1,0 +1,31 @@
+[global]
+    name = "vearch"
+    data = ["datas/"]
+    level = "info"
+    signkey = "vearch"
+    skip_auth = true
+
+# if you are master, you'd better set all config for router、ps and router, ps use default config it so cool
+[[masters]]
+    name = "m1"
+    address = "172.21.32.62"
+    api_port = 8817
+    etcd_port = 2378
+    etcd_peer_port = 2390
+    etcd_client_port = 2370
+# [[masters]]
+#     name = "m2"
+#     address = "192.168.1.2"
+#     api_port = 8817
+#     etcd_port = 2378
+#     etcd_peer_port = 2390
+#     etcd_client_port = 2370
+[router]
+    port = 9002
+    skip_auth = true
+    hearbeat_interval_s = 5
+[ps]
+    rpc_port = 8081
+    hearbeat_interval_s = 3
+    raft_election_timeout_ms = 1000
+    raft_snap_interval_s = 30
