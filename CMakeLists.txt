@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 # 日志打印绝对路径
-option(WITH_GLOG "With glog" OFF)
+option(WITH_GLOG "With glog" ON)
 add_compile_options(-fmacro-prefix-map=${CMAKE_SOURCE_DIR}=.)
 if(WITH_GLOG)
     set(WITH_GLOG_VAL "1")
@@ -51,21 +51,16 @@ configure_file(${CMAKE_SOURCE_DIR}/config/config.toml
                ${CMAKE_BINARY_DIR}/config.toml
                COPYONLY)
 
-set(CMAKE_INCLUDE_PATH 
-    "$ENV{BRPC_HOME}/include"
-    "$ENV{BRAFT_HOME}/include"
-    ${CMAKE_INCLUDE_PATH})
-set(CMAKE_LIBRARY_PATH 
-    "$ENV{BRPC_HOME}/lib64" 
-    "$ENV{BRPC_HOME}/lib" 
-    "$ENV{BRAFT_HOME}/lib" 
-    ${CMAKE_LIBRARY_PATH})
-
 # 如果 brpc 或 protobuf 安装路径不在标准位置，可以通过以下方式指定路径
-link_directories($ENV{BRPC_HOME}/lib64)
+link_directories(
+    $ENV{BRPC_HOME}/lib64
+    $ENV{BRPC_HOME}/lib
+    $ENV{BRAFT_HOME}/lib
+)
 
 include_directories(
     $ENV{BRPC_HOME}/include
+    $ENV{BRAFT_HOME}/include
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/idl/gen_idl
     ${CMAKE_SOURCE_DIR}/third_party/toml11/include

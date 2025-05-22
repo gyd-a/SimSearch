@@ -1,8 +1,9 @@
-build*
+build
 bld
-log*
+logs
 brpc
 braft
 *main
 gen_idl
 datas
+.vscode

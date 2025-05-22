@@ -26,7 +26,7 @@ func main() {
 	slog.SetConfig(config.Conf().GetLogFileNum(), 1024 * 1024 * config.Conf().GetLogFileSize())
 	log.Regist(slog.NewSLog(config.Conf().GetLogDir(), "master", config.Conf().GetLevel(), false))
 
-	log.Info("master conf_path: %s", *conf_path)
+	log.Info("master pid: %d conf_path: %s", os.Getpid(), *conf_path)
 
 	if err := config.Conf().CurrentByMasterNameDomainIp("master"); err != nil {
 		log.Error("CurrentByMasterNameDomainIp master error: %v, exit()", err)
