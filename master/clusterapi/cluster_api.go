@@ -15,17 +15,15 @@ import (
 
 type EtcdCli = etcdcluster.EtcdClient
 
-
 const (
 	GenPsIdKey     = "gen_ps_id"
 	GenRouterIdKey = "gen_router_id"
 	IdBaseVal      = 0
 )
 
-
 type ClusterAPI struct {
-	etcdCli             *EtcdCli
-	httpSer             *gin.Engine
+	etcdCli *EtcdCli
+	httpSer *gin.Engine
 }
 
 func (ca *ClusterAPI) InitClusterApi(etcdClient *EtcdCli) {
@@ -38,7 +36,6 @@ func (ca *ClusterAPI) InitClusterApi(etcdClient *EtcdCli) {
 	ca.httpSer.POST("/api/create_space", ca.createSpace)
 	ca.httpSer.POST("/api/space_list", ca.spaceList)
 	ca.httpSer.POST("/api/delete_space", ca.deleteSpace)
-
 
 	apiPort := fmt.Sprintf(":%d", config.Conf().Masters.Self().ApiPort)
 	go func() {
@@ -57,7 +54,7 @@ func (ca *ClusterAPI) ping(c *gin.Context) {
 // got every partition servers system info
 func (ca *ClusterAPI) genID(c *gin.Context) {
 	var req struct {
-		Id int  `json:"id"`
+		Id int `json:"id"`
 	}
 	log.Info("-------------gen_id api-------------------")
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -69,5 +66,5 @@ func (ca *ClusterAPI) genID(c *gin.Context) {
 	genId, _ := ca.etcdCli.NewIDGenerate(ctx, GenPsIdKey, IdBaseVal)
 	fmt.Printf("gen_id: %d\n", genId)
 	log.Info("-------------gen_id:[%d] success-------------------", genId)
-	c.JSON(http.StatusOK, gin.H{"id": genId, "code":0, "msg": "success"})
+	c.JSON(http.StatusOK, gin.H{"id": genId, "code": 0, "msg": "success"})
 }

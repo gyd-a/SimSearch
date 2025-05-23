@@ -6,21 +6,20 @@ import (
 	"strings"
 )
 
-
 type Replica struct {
-	PsID              int               `json:"ps_id"`
-	PsIP              string            `json:"ps_ip"`
-	PsPort            int               `json:"ps_port"`
-	IsLeader          int               `json:"is_leader"`   // 0: 不是，1: 是
-	NodeStatus        string            `json:"node_status"`
-	Msg               string            `json:"msg"`
+	PsID       int    `json:"ps_id"`
+	PsIP       string `json:"ps_ip"`
+	PsPort     int    `json:"ps_port"`
+	IsLeader   int    `json:"is_leader"` // 0: 不是，1: 是
+	NodeStatus string `json:"node_status"`
+	Msg        string `json:"msg"`
 }
 
 type ReplicaList struct {
-	KeyToPsNode         map[string]Replica
+	KeyToPsNode map[string]Replica
 }
 
-func (r *ReplicaList)DeserializeFromByte(nodeKeys [][]byte, vals [][]byte) {
+func (r *ReplicaList) DeserializeFromByte(nodeKeys [][]byte, vals [][]byte) {
 	r.KeyToPsNode = make(map[string]Replica)
 	// key: /nodes/ps/:1:172.24.131.15:8081
 	// val: rpc_port
@@ -37,7 +36,7 @@ func (r *ReplicaList)DeserializeFromByte(nodeKeys [][]byte, vals [][]byte) {
 		psId, _ := strconv.Atoi(parts[1])
 		psPort, _ := strconv.Atoi(parts[3])
 		r.KeyToPsNode[strNodeKey] = Replica{PsID: psId, PsIP: psIP, PsPort: psPort,
-											IsLeader:0}
+			IsLeader: 0}
 	}
 }
 
@@ -51,17 +50,16 @@ func (r *ReplicaList) GetAllIdlePsKeys(busyNodeKeys map[string]string) (idleNode
 	return idleNodes
 }
 
-
 type RouterReplica struct {
-	RouterIP       string            `json:"router_ip"`
-	RouterPort     int 			     `json:"router_port"`
+	RouterIP   string `json:"router_ip"`
+	RouterPort int    `json:"router_port"`
 }
 
 type RouterReplicaList struct {
-	KeyToPsNode         map[string]RouterReplica
+	KeyToPsNode map[string]RouterReplica
 }
 
-func (r *RouterReplicaList)DeserializeFromByte(nodeKeys [][]byte, vals [][]byte) {
+func (r *RouterReplicaList) DeserializeFromByte(nodeKeys [][]byte, vals [][]byte) {
 	r.KeyToPsNode = make(map[string]RouterReplica)
 	// key: /nodes/router/:172.24.131.15:8081
 	// val: 暂无信息
