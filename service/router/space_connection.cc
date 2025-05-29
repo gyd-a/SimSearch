@@ -18,7 +18,7 @@
 std::string SpaceConnection::Init(const common_rpc::Space& space) {
   _pb_space = space;
   _db_name = space.db_name();
-  _space_name = space.name();
+  _space_name = space.space_name();
   _space_key = GenSpaceKey(DbName(), SpaceName());
   _partition_list.resize(_pb_space.partitions().size());
   for (int i = 0; i < _pb_space.partitions().size(); ++i) {

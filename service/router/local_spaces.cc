@@ -99,7 +99,7 @@ bool LocalSpaces::DeleteSpace(const std::string& db_name,
   // 使用下标倒序遍历删除，避免元素移动影响后续下标
   for (int i = spaces->size() - 1; i >= 0; --i) {
     const auto& space = spaces->Get(i);
-    if (space.db_name() == db_name && space.name() == space_name) {
+    if (space.db_name() == db_name && space.space_name() == space_name) {
       spaces->DeleteSubrange(i, 1);  // 删除第 i 个元素
       is_del = true;
     }

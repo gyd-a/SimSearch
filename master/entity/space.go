@@ -14,7 +14,7 @@ import (
 // space/[dbId]/[spaceId]:[spaceBody]
 type Space struct {
 	DbName            string            `json:"db_name"`
-	Name              string            `json:"name"` //user setting
+	SpaceName         string            `json:"space_name"` //user setting
 	PartitionNum      uint              `json:"partition_num"`
 	ReplicaNum        uint              `json:"replica_num"`
 	Fields            []Field           `json:"fields"`
@@ -71,7 +71,7 @@ func (s *Space) Validate() (string) {
 		log.Error(err_str)
 		return err_str
 	}
-	if err_str := NameValidate(s.Name); err_str != "" {
+	if err_str := NameValidate(s.SpaceName); err_str != "" {
 		err_str = "Space Name 格式错误：" + err_str
 		log.Error(err_str)
 		return err_str
@@ -125,7 +125,7 @@ func (sl *SpaceList) DeserializeFromByteList(spaceJsonList [][]byte) {
 			log.Error("unmarshal json of ETCD space to Space struct, json:%s error: %v", spaceJson, err)
 			continue
 		}
-		sl.NameToSpace[s.DbName + ":" + s.Name] = s
+		sl.NameToSpace[s.DbName + ":" + s.SpaceName] = s
 	}
 }
 

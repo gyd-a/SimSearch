@@ -31,7 +31,7 @@ class PsLocalNodeMata {
   int32_t PsPort();
 
   std::string SpaceKey() {
-    return GenSpaceKey(_space_req.space().db_name(), _space_req.space().name());
+    return GenSpaceKey(_space_req.space().db_name(), _space_req.space().space_name());
   }
 
   const ps_rpc::CreateSpaceRequest& SpaceReq() { return _space_req; }
@@ -43,7 +43,7 @@ class PsLocalNodeMata {
   };
 
   std::string SpaceName() {
-    return _space_req.space().name();
+    return _space_req.space().space_name();
   };
 
   std::string DumpNodeInfo();

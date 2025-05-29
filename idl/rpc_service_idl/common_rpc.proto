@@ -18,11 +18,11 @@ message Field {
 // 也是ps创建Space的request
 message Space {
     optional string                   db_name = 1;
-    optional string                      name = 2;
+    optional string                space_name = 2;
     optional uint32             partition_num = 3;
     optional uint32               replica_num = 4;
-    repeated Field            fields = 5;
-    repeated Partition    partitions = 6;
+    repeated Field                     fields = 5;
+    repeated Partition             partitions = 6;
 }
 
 

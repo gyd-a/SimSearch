@@ -39,7 +39,7 @@ func ValidateNameAndGetIdlePsNode(ctx context.Context, space *entity.Space, etcd
 	busySpaceList := entity.SpaceList{}
 	busySpaceList.DeserializeFromByteList(spaces_detail)
 	// TODO: 数据校验
-	var db_and_space_name string = space.DbName + ":" + space.Name
+	var db_and_space_name string = space.DbName + ":" + space.SpaceName
 	if _, ok := busySpaceList.NameToSpace[db_and_space_name]; ok {
 		e_str = fmt.Sprintf("DB_name + space_name[%s] already exists, Please reset DB_name and Space_name.",
 			db_and_space_name)
@@ -112,7 +112,7 @@ func CreateSpaceImpl(ctx context.Context, etcdCli *EtcdCli, space *entity.Space,
 	for pid := 0; pid < int(space.PartitionNum); pid++ {
 		partition := entity.Partition{
 			PartitionId: pid,
-			GroupName:   fmt.Sprintf("%s:%s:%d", space.DbName, space.Name, pid),
+			GroupName:   fmt.Sprintf("%s:%s:%d", space.DbName, space.SpaceName, pid),
 			Replicas:    make([]entity.Replica, space.ReplicaNum),
 			CreateTime:  timeStr,
 			UpdateTime:  timeStr,
@@ -127,7 +127,7 @@ func CreateSpaceImpl(ctx context.Context, etcdCli *EtcdCli, space *entity.Space,
 	if e_str = ParallelQueryPsCreateSpace(space, "create"); len(e_str) > 0 {
 		return e_str
 	}
-	etcdKey := GetSpaceEtcdPrefix(space.DbName, space.Name)
+	etcdKey := GetSpaceEtcdPrefix(space.DbName, space.SpaceName)
 	if e := etcdCli.Put(ctx, etcdKey, spaceJson); e != nil {
 		e_str = "Space Mata info put etcd server error, " + e.Error()
 		log.Error(e_str)
@@ -136,7 +136,7 @@ func CreateSpaceImpl(ctx context.Context, etcdCli *EtcdCli, space *entity.Space,
 		}
 		return e_str
 	}
-	log.Info("db_name:%s, space_name:%s, Create space successful !!!", space.DbName, space.Name)
+	log.Info("db_name:%s, space_name:%s, Create space successful !!!", space.DbName, space.SpaceName)
 	return ""
 }
 
@@ -294,6 +294,9 @@ func (ca *ClusterAPI) deleteSpace(c *gin.Context) {
 			})
 		}
 		concurrent.ParallelExecuteWithResults(deleteOneSpaceImpl, routerTasks, 10)
+	} else {
+		c.JSON(http.StatusOK, gin.H{"code": 104, "msg": fmt.Sprintf("db_name=%s and space_name=%s is not exist", req.DbName, req.SpaceName)})
+		return
 	}
 	if err := ca.etcdCli.Delete(ctx, etcdKey); err != nil {
 		log.Error("for delete space, etcd delete key:%s failed", etcdKey)

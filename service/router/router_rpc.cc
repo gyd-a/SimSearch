@@ -22,7 +22,7 @@ void RouterSpaceRpcImpl::AddSpace(::google::protobuf::RpcController* controller,
     status->set_code(101);
     status->set_msg(msg);
   } else {
-    LOG(INFO) << "=========AddSpace success, space_name:" << req->space().name()
+    LOG(INFO) << "=========AddSpace success, space_name:" << req->space().space_name()
               << "=======";
     status->set_code(0);
     status->set_msg("");

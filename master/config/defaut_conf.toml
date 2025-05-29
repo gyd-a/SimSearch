@@ -1,12 +1,13 @@
 [global]
     name = "vearch"
     data = ["datas/"]
-    log = "logs/"
     level = "debug"
+    signkey = "vearch"
+    skip_auth = true
 
 [[masters]]
     name = "m1"
-    address = "132.2.3.62"
+    address = "10.26.112.65"
     api_port = 8817
     etcd_port = 2378
     etcd_peer_port = 2390
@@ -14,11 +15,9 @@
 [router]
     port = 9002
     skip_auth = true
+    hearbeat_interval_s = 5
 [ps]
     rpc_port = 8081
-    raft_heartbeat_port = 8898
-    raft_replicate_port = 8899
-    heartbeat-interval = 200 #ms
-    raft_retain_logs = 10000
-    raft_replica_concurrency = 1
-    raft_snap_concurrency = 1
+    hearbeat_interval_s = 3
+    raft_election_timeout_ms = 1000
+    raft_snap_interval_s = 30

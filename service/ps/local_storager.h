@@ -19,8 +19,10 @@ class LocalStorager {
 
   std::string GetRaftRoot();
 
-  bool GetRaftParams(std::string& root_path, std::string& group, 
-                     std::string& conf, int& port);
+  bool GetRaftParams(std::string& root_path, std::string& group, std::string& conf,
+                     int& port);
+
+  std::string DeleteSpace(const std::string& db_name, const std::string& space_name);
 
   static LocalStorager& GetInstance();
 

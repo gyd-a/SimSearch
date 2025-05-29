@@ -31,7 +31,7 @@ func (ca *ClusterAPI) InitClusterApi(etcdClient *EtcdCli) {
 	ca.etcdCli.NewIDGenerate(context.Background(), GenPsIdKey, IdBaseVal)
 
 	ca.httpSer = gin.Default()
-	ca.httpSer.GET("/api/ping", ca.ping)
+	ca.httpSer.GET("/ping", ca.ping)
 	ca.httpSer.POST("/api/gen_id", ca.genID)
 	ca.httpSer.POST("/api/create_space", ca.createSpace)
 	ca.httpSer.POST("/api/space_list", ca.spaceList)

@@ -34,8 +34,8 @@ int main(int argc, char* argv[]) {
   google::InitGoogleLogging(argv[0]);
   LOG(INFO) << "************* start PS, pid:" << getpid() << " ************";
   InitConfig(FLAGS_ip, FLAGS_port, "", FLAGS_conf);
-  LocalStorager& local_storager = LocalStorager::GetInstance();
-  if (local_storager.CreateOrLoadNodeMata(_ps_storage_dir) <= 0) {
+  LocalStorager& local_store = LocalStorager::GetInstance();
+  if (local_store.CreateOrLoadNodeMata(_ps_storage_dir) <= 0) {
     LOG(ERROR) << "Failed to CreateOrLoadNodeMata. process exit()";
     return -1;
   }
@@ -43,7 +43,7 @@ int main(int argc, char* argv[]) {
 
   BrpcServer* brpc_sv = new BrpcServer();
 
-  auto[node_K, node_V] = local_storager.GenPsNodeKeyAndValue();
+  auto[node_K, node_V] = local_store.GenPsNodeKeyAndValue();
   brpc::EtcdClient etcd_cli;
   LOG(INFO) << "ps_node_key:" << node_K << ", value:" << node_V;
   if (etcd_cli.Init(toml_conf_.GetMasterIpPorts()) == false) {
@@ -55,14 +55,14 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 
-  if (local_storager.PsNodeMata().HasSpace()) {
+  if (local_store.PsNodeMata().HasSpace()) {
     LOG(INFO) << "local file has space, start load Raft.";
     RaftManager::GetInstance().CreateBlock();
     std::string root_path, grp, conf;
     int port = 0;
-    local_storager.GetRaftParams(root_path, grp, conf, port);
+    local_store.GetRaftParams(root_path, grp, conf, port);
     if (RaftManager::GetInstance()
-            .StartRaftServer(root_path, grp, conf, port)
+            .StartRaftServer(root_path, grp, conf, local_store.PsNodeMata().PsIP(), port)
             .size() > 0) {
       LOG(ERROR) << "restart Raft error, server not write, only read.";
     }

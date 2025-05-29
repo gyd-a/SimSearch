@@ -1,8 +1,9 @@
 
 
 #include "raft_store/raft_store.h"
-#include "config/conf.h"
+#include <butil/file_util.h>
 #include <butil/logging.h>
+#include "config/conf.h"
 
 // Implementation of example::Block as a braft::StateMachine.
 
@@ -12,7 +13,7 @@ Block::~Block() { delete _node; }
 
 // Starts this node
 int Block::start(const std::string& root_path, const std::string& group,
-                 const std::string& conf, int port) {
+                 const std::string& conf, const std::string& my_ip, int port) {
   _root_path = root_path;
   _group = group;
   _conf = conf;
@@ -29,7 +30,13 @@ int Block::start(const std::string& root_path, const std::string& group,
     return -1;
   }
   _fd = new SharedFD(fd);
-  butil::EndPoint addr(butil::my_ip(), port);
+  butil::EndPoint addr;
+  std::string ip_port = my_ip + ":" + std::to_string(port);
+  if (butil::str2endpoint(ip_port.c_str(), &addr) != 0) {
+    LOG(ERROR) << "raft Block start() error, failed to convert " << ip_port
+               << " to EndPoint";
+    return -1;
+  }
   braft::NodeOptions node_options;
   if (node_options.initial_conf.parse_from(conf) != 0) {
     LOG(ERROR) << "Fail to parse configuration `" << conf << '\'';
@@ -85,8 +92,7 @@ void Block::write(const raft_rpc::BlockRequest* request,
   braft::Task task;
   task.data = &log;
   // This callback would be iovoked when the task actually excuted or fail
-  task.done =
-      new BlockClosure(this, request, response, data, done_guard.release());
+  task.done = new BlockClosure(this, request, response, data, done_guard.release());
   if (_check_term) {
     // ABA problem can be avoid if expected_term is set
     task.expected_term = term;
@@ -96,8 +102,8 @@ void Block::write(const raft_rpc::BlockRequest* request,
   return _node->apply(task);
 }
 
-void Block::read(const raft_rpc::BlockRequest* request,
-                 raft_rpc::BlockResponse* response, butil::IOBuf* buf) {
+void Block::read(const raft_rpc::BlockRequest* request, raft_rpc::BlockResponse* response,
+                 butil::IOBuf* buf) {
 #ifndef DEBUG_BUILD
   std::string dkeys;
   auto docs_info = request->docs_info();
@@ -124,7 +130,8 @@ void Block::read(const raft_rpc::BlockRequest* request,
   scoped_fd fd = get_fd();
   butil::IOPortal portal;
   // int offset = atoi(request->key_list()[0].c_str()) * request->data_size();
-  // const ssize_t nr = braft::file_pread(&portal, fd->fd(), offset, request->data_size());
+  // const ssize_t nr = braft::file_pread(&portal, fd->fd(), offset,
+  // request->data_size());
   std::vector<int32_t> keys, doc_lengths;
   const auto& doc_infos = request->docs_info();
   for (int i = 0; i < doc_infos.size(); ++i) {
@@ -197,10 +204,13 @@ void Block::on_apply(braft::Iterator& iter) {
     butil::IOBuf data;
     std::vector<std::pair<int32_t, int16_t>> doc_infos;
     if (iter.done()) {
-      DLOG(INFO) << "************* on_apply() function go in iter.done() **************";
-      // This task is applied by this node, get value from this closure to avoid additional parsing.
+      DLOG(INFO) << "********* on_apply() function go in iter.done() "
+                    "*********";
+      // This task is applied by this node, get value from this closure to avoid
+      // additional parsing.
       BlockClosure* c = dynamic_cast<BlockClosure*>(iter.done());
-      // offset = atoi(c->request()->key_list()[0].c_str()) * c->request()->data_size();
+      // offset = atoi(c->request()->key_list()[0].c_str()) *
+      // c->request()->data_size();
       data.swap(*(c->data()));
       response = c->response();
       const auto& pb_doc_infos = c->request()->docs_info();
@@ -212,7 +222,8 @@ void Block::on_apply(braft::Iterator& iter) {
       }
       test_id = c->request()->test_id();
     } else {
-      DLOG(INFO) << "********** on_apply() function go in iter.done()=false ************";
+      DLOG(INFO) << "********** on_apply() function go in iter.done()=false "
+                    "**********";
       // Have to parse BlockRequest from this log.
       uint32_t meta_size = 0;
       butil::IOBuf saved_log = iter.data();
@@ -236,22 +247,23 @@ void Block::on_apply(braft::Iterator& iter) {
       }
       test_id = request.test_id();
     }
-    
+
     std::string data_buf;
     data.copy_to(&data_buf);
-    DLOG(INFO) << "*********** on_apply() test_id:" << test_id << " *************";
+    DLOG(INFO) << "******** on_apply() test_id:" << test_id << " ********";
     // const ssize_t nw = braft::file_pwrite(data, _fd->fd(), offset);
     std::string msg = Engine::GetInstance().BatchAdd(doc_infos, data_buf);
-    DLOG(INFO) << "********* on_apply() Engine BatchAdd msg:[" << msg << "] ********";
+    DLOG(INFO) << "***** on_apply() Engine BatchAdd msg:[" << msg << "] *****";
     // if (msg.size() > 0 || test_id > 0) {
     if (false) {
-      LOG(ERROR) << "********* on_apply() Write Engine fail, msg:[" << msg << "] **********";
+      LOG(ERROR) << "*** on_apply() Write Engine fail, msg:[" << msg << "] ***";
       if (response) {
         response->set_success(false);
       }
       // Let raft run this closure.
       closure_guard.release();
-      // Some disk error occurred, notify raft and never apply any data ever after
+      // Some disk error occurred, notify raft and never apply any data ever
+      // after
       iter.set_error_and_rollback();
       return;
     }
@@ -264,10 +276,11 @@ void Block::on_apply(braft::Iterator& iter) {
     // this StateMachine works.
     // Remove these logs in performance-sensitive servers.
     // LOG_IF(INFO, FLAGS_log_applied_task)
-    
-    LOG(INFO) << "******* on_apply() Write " << data.size() << " bytes success ********";
+
+    LOG(INFO) << "*** on_apply() Write " << data.size() << " bytes success ***";
     // LOG(INFO) << "Write " << data.size() << " bytes"
-    //           << " from offset=" << offset << " at log_index=" << iter.index();
+    //           << " from offset=" << offset << " at log_index=" <<
+    //           iter.index();
   }
 }
 
@@ -296,34 +309,33 @@ void* Block::save_snapshot(void* arg) {
     }
   }
 
-/*
-  std::string snapshot_path = sa->writer->get_path() + "/data";
-  // Sync buffered data before
-  int rc = 0;
-  LOG(INFO) << "Saving snapshot to " << snapshot_path;
-  for (; (rc = ::fdatasync(sa->fd->fd())) < 0 && errno == EINTR;) {
-  }
-  if (rc < 0) {
-    sa->done->status().set_error(EIO, "Fail to sync fd=%d : %m", sa->fd->fd());
-    return NULL;
-  }
-  std::string data_path = sa->root_path + "/data";
-  if (link_overwrite(data_path.c_str(), snapshot_path.c_str()) != 0) {
-    sa->done->status().set_error(EIO, "Fail to link data : %m");
-    return NULL;
-  }
+  /*
+    std::string snapshot_path = sa->writer->get_path() + "/data";
+    // Sync buffered data before
+    int rc = 0;
+    LOG(INFO) << "Saving snapshot to " << snapshot_path;
+    for (; (rc = ::fdatasync(sa->fd->fd())) < 0 && errno == EINTR;) {
+    }
+    if (rc < 0) {
+      sa->done->status().set_error(EIO, "Fail to sync fd=%d : %m",
+    sa->fd->fd()); return NULL;
+    }
+    std::string data_path = sa->root_path + "/data";
+    if (link_overwrite(data_path.c_str(), snapshot_path.c_str()) != 0) {
+      sa->done->status().set_error(EIO, "Fail to link data : %m");
+      return NULL;
+    }
 
-  // Snapshot is a set of files in raft. Add the only file into the writer here.
-  if (sa->writer->add_file("data") != 0) {
-    sa->done->status().set_error(EIO, "Fail to add file to writer");
-    return NULL;
-  }
-*/
+    // Snapshot is a set of files in raft. Add the only file into the writer
+    here. if (sa->writer->add_file("data") != 0) {
+      sa->done->status().set_error(EIO, "Fail to add file to writer");
+      return NULL;
+    }
+  */
   return NULL;
 }
 
-void Block::on_snapshot_save(braft::SnapshotWriter* writer,
-                             braft::Closure* done) {
+void Block::on_snapshot_save(braft::SnapshotWriter* writer, braft::Closure* done) {
   // Save current StateMachine in memory and starts a new bthread to avoid
   // blocking StateMachine since it's a bit slow to write data to disk
   // file.
@@ -344,27 +356,27 @@ int Block::on_snapshot_load(braft::SnapshotReader* reader) {
   if (msg.size() > 0) {
     return -1;
   }
-/*
-  if (reader->get_file_meta("data", NULL) != 0) {
-    LOG(ERROR) << "Fail to find `data' on " << reader->get_path();
-    return -1;
-  }
-  // reset fd
-  _fd = NULL;
-  std::string snapshot_path = reader->get_path() + "/data";
-  std::string data_path = _root_path + "/data";
-  if (link_overwrite(snapshot_path.c_str(), data_path.c_str()) != 0) {
-    PLOG(ERROR) << "Fail to link data";
-    return -1;
-  }
-  // Reopen this file
-  int fd = ::open(data_path.c_str(), O_RDWR, 0644);
-  if (fd < 0) {
-    PLOG(ERROR) << "Fail to open " << data_path;
-    return -1;
-  }
-  _fd = new SharedFD(fd);
-*/
+  /*
+    if (reader->get_file_meta("data", NULL) != 0) {
+      LOG(ERROR) << "Fail to find `data' on " << reader->get_path();
+      return -1;
+    }
+    // reset fd
+    _fd = NULL;
+    std::string snapshot_path = reader->get_path() + "/data";
+    std::string data_path = _root_path + "/data";
+    if (link_overwrite(snapshot_path.c_str(), data_path.c_str()) != 0) {
+      PLOG(ERROR) << "Fail to link data";
+      return -1;
+    }
+    // Reopen this file
+    int fd = ::open(data_path.c_str(), O_RDWR, 0644);
+    if (fd < 0) {
+      PLOG(ERROR) << "Fail to open " << data_path;
+      return -1;
+    }
+    _fd = new SharedFD(fd);
+  */
   return 0;
 }
 
@@ -380,9 +392,7 @@ void Block::on_leader_stop(const butil::Status& status) {
 
 void Block::on_shutdown() { LOG(INFO) << "This node is down"; }
 
-void Block::on_error(const ::braft::Error& e) {
-  LOG(ERROR) << "Met raft error " << e;
-}
+void Block::on_error(const ::braft::Error& e) { LOG(ERROR) << "Met raft error " << e; }
 
 void Block::on_configuration_committed(const ::braft::Configuration& conf) {
   LOG(INFO) << "Configuration of this group is " << conf;
@@ -410,15 +420,12 @@ void BlockClosure::Run() {
   _block->redirect(_response);
 }
 
-
 RaftManager& RaftManager::GetInstance() {
   static RaftManager braft_mrg;
   return braft_mrg;
 }
 
-RaftManager::~RaftManager() {
-  DeleteBlock();
-}
+RaftManager::~RaftManager() { DeleteBlock(); }
 
 std::string RaftManager::CreateBlock() {
   DeleteBlock();
@@ -429,6 +436,10 @@ std::string RaftManager::CreateBlock() {
 std::string RaftManager::DeleteBlock() {
   LOG(WARNING) << "************ delete raft block **************";
   if (_block) {
+    butil::FilePath del_dir(_block->root_path());
+    if (butil::DeleteFile(del_dir, /*recursive=*/true) == false) {
+      LOG(ERROR) << "delete raft root_path:[" << _block->root_path() << "] failed";
+    }
     delete _block;
     _block = nullptr;
   }
@@ -439,16 +450,17 @@ Block* RaftManager::block() { return _block; }
 
 std::string RaftManager::StartRaftServer(const std::string& root_path,
                                          const std::string& group,
-                                         const std::string& conf, int port) {
-  LOG(INFO) << "StartRaftServer, root_path:[" << root_path << "] group:["
-            << group << "] conf:[" << conf << "] port:[" << port << "]";
+                                         const std::string& conf,
+                                         const std::string& my_ip, int port) {
+  LOG(INFO) << "StartRaftServer, root_path:[" << root_path << "] group:[" << group
+            << "] conf:[" << conf << "] port:[" << port << "]";
   if (_block == nullptr) {
     std::string msg = "block is nullptr";
     LOG(ERROR) << msg;
     return msg;
   }
   // It's ok to start Block
-  if (_block->start(root_path, group, conf, port) != 0) {
+  if (_block->start(root_path, group, conf, my_ip, port) != 0) {
     std::string msg = "Fail to start Block";
     LOG(ERROR) << msg;
     return msg;

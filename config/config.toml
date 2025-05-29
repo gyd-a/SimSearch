@@ -8,7 +8,7 @@
 # if you are master, you'd better set all config for router、ps and router, ps use default config it so cool
 [[masters]]
     name = "m1"
-    address = "12.1.2.6"
+    address = "10.26.112.65"
     api_port = 8817
     etcd_port = 2378
     etcd_peer_port = 2390

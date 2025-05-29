@@ -72,7 +72,7 @@ class Block : public braft::StateMachine {
   ~Block();
   // Starts this node
   int start(const std::string& root_path, const std::string& group, 
-            const std::string& conf, int port);
+            const std::string& conf, const std::string& my_ip, int port);
   // Impelements Service methods
   void write(const raft_rpc::BlockRequest* request,
              raft_rpc::BlockResponse* response, butil::IOBuf* data,
@@ -166,7 +166,8 @@ class RaftManager {
 
   std::string StartRaftServer(const std::string& root_path,
                               const std::string& group,
-                              const std::string& conf, int port);
+                              const std::string& conf, 
+                              const std::string& my_ip, int port);
 
   static RaftManager& GetInstance();
  private:

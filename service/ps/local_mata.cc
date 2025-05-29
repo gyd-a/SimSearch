@@ -146,7 +146,7 @@ const std::string& PsLocalNodeMata::PsIP() { return _ps_node_info.ps_ip(); }
 int32_t PsLocalNodeMata::PsPort() { return _ps_node_info.ps_port(); }
 
 std::string PsLocalNodeMata::DeleteSpace() {
-  LOG(WARNING) << "PsLocalNodeMata delete space:" << _space_req.space().name();
+  LOG(WARNING) << "PsLocalNodeMata delete space:" << _space_req.space().space_name();
   _space_req.Clear();
   butil::DeleteFile(butil::FilePath(_space_schema_file), false);
   _has_space = false;

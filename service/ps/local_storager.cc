@@ -108,6 +108,18 @@ int64_t LocalStorager::CreateOrLoadNodeMata(const std::string& dir_path) {
   return _ps_node_mata.PsId();
 }
 
+std::string LocalStorager::DeleteSpace(const std::string& db_name, const std::string& space_name) {
+  if (db_name == _ps_node_mata.DbName() && space_name == _ps_node_mata.SpaceName()) {
+    _ps_node_mata.DeleteSpace();
+    return "";
+  }
+  LOG(ERROR) << "LocalStorager delete space failed, query db_name:" << db_name 
+             << ", space_name:" << space_name << " unequal to Ps db_name:" 
+             << _ps_node_mata.DbName() << ", space_name:" << _ps_node_mata.SpaceName();
+  return "Incorrect db_name or space_name";
+}
+
+
 std::pair<std::string, std::string> LocalStorager::GenPsNodeKeyAndValue() {
   std::ostringstream node_key_oss;
   node_key_oss << _ps_register_prefix << ":" << _ps_node_mata.PsId() << ":"
