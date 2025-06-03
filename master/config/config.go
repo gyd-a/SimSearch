@@ -35,7 +35,7 @@ var PsNodePrefix      string = NodePrefix + "/ps"
 var RouterNodePrefix  string = NodePrefix + "/router"
 var SpaceMataPrefix   string = "/spaces/mata"
 var SpaceLogPrefix    string = "/spaces/log"
-
+var SpaceLockKey      string = "/spaces/lock"
 
 
 // SetConfigVersion set the version, time and commit id of build

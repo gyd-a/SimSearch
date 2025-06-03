@@ -21,11 +21,11 @@ import (
 	"time"
 
 	"master/config"
+
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/concurrency"
 )
-
 
 
 // func init() {
@@ -92,6 +92,10 @@ func NewEtcdClient(serverAddrs []string) (*EtcdClient, error) {
 		return nil, err
 	}
 	return &EtcdClient{cli: cli}, nil
+}
+
+func (sc *EtcdClient) GetCli() *clientv3.Client {
+	return sc.cli
 }
 
 // put kv if already exits it will overwrite
@@ -319,4 +323,3 @@ func (sc *EtcdClient) Endpoints() []string {
 func (sc *EtcdClient) MemberSync(ctx context.Context) error {
 	return sc.cli.Sync(ctx)
 }
-

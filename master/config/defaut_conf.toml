@@ -4,6 +4,7 @@
     level = "debug"
     signkey = "vearch"
     skip_auth = true
+    log = "logs"
 
 [[masters]]
     name = "m1"

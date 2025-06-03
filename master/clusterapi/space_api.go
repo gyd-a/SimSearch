@@ -5,31 +5,18 @@ import (
 	"fmt"
 	"master/config"
 	"master/entity"
+	"master/etcdcluster"
 	"master/utils/concurrent"
 	"master/utils/httputil"
 	"master/utils/log"
 	"master/utils/timeutil"
 	"net/http"
 
+	"master/common"
 	// "strconv"
 
 	"github.com/gin-gonic/gin"
 )
-
-func GetSpaceEtcdPrefix(db_name string, space_name string) string {
-	// etcdKey = "/spaces/mata/{DbName}/{Name}"
-	var etcdKey string = fmt.Sprintf("%s/%s/%s", config.SpaceMataPrefix,
-		db_name, space_name)
-	return etcdKey
-}
-
-func GetIPList(keyByteList [][]byte) []string {
-	result := make([]string, len(keyByteList))
-	for i, b := range keyByteList {
-		result[i] = string(b)
-	}
-	return result
-}
 
 func ValidateNameAndGetIdlePsNode(ctx context.Context, space *entity.Space, etcdCli *EtcdCli) (idlePsLiss []entity.Replica, e_str string) {
 	ps_keys, ps_vals, _ := etcdCli.PrefixScan(ctx, config.PsNodePrefix)
@@ -127,7 +114,7 @@ func CreateSpaceImpl(ctx context.Context, etcdCli *EtcdCli, space *entity.Space,
 	if e_str = ParallelQueryPsCreateSpace(space, "create"); len(e_str) > 0 {
 		return e_str
 	}
-	etcdKey := GetSpaceEtcdPrefix(space.DbName, space.SpaceName)
+	etcdKey := common.GetSpaceEtcdPrefix(space.DbName, space.SpaceName)
 	if e := etcdCli.Put(ctx, etcdKey, spaceJson); e != nil {
 		e_str = "Space Mata info put etcd server error, " + e.Error()
 		log.Error(e_str)
@@ -175,16 +162,29 @@ func (ca *ClusterAPI) createSpace(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"code": 11, "msg": unvalid_str})
 		return
 	}
+	etcd_locker, err := etcdcluster.CreateEtcdLocker(ca.etcdCli.GetCli(), config.SpaceLockKey)
+	if err != nil {
+		log.Errorf("create etcd locker failed: %v", err)
+		c.JSON(http.StatusOK, gin.H{"code": 12, "msg": "etcd locker create failed"})
+		return
+	}
 	ctx := context.Background()
+	if etcd_locker.TryLock(ctx, 20, 200) != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 13, "msg": "get etcd locker failed"})
+		return
+	}
 	idlePsNode, e_str := ValidateNameAndGetIdlePsNode(ctx, &space, ca.etcdCli)
 	if len(e_str) > 0 {
-		c.JSON(http.StatusOK, gin.H{"code": 12, "msg": e_str})
+		etcd_locker.UnlockAndClose(ctx)
+		c.JSON(http.StatusOK, gin.H{"code": 14, "msg": e_str})
 		return
 	}
 	if e_str = CreateSpaceImpl(ctx, ca.etcdCli, &space, &idlePsNode); len(e_str) > 0 {
-		c.JSON(http.StatusOK, gin.H{"code": 13, "msg": e_str})
+		etcd_locker.UnlockAndClose(ctx)
+		c.JSON(http.StatusOK, gin.H{"code": 15, "msg": e_str})
 		return
 	}
+	etcd_locker.UnlockAndClose(ctx)
 	QueryRouterAddSpaceApi(ctx, ca.etcdCli, &space)
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "success"})
 }
@@ -253,13 +253,21 @@ func (ca *ClusterAPI) deleteSpace(c *gin.Context) {
 		return
 	}
 	ctx := context.Background()
-	etcdKey := GetSpaceEtcdPrefix(req.DbName, req.SpaceName)
+	etcd_locker, err := etcdcluster.CreateEtcdLocker(ca.etcdCli.GetCli(), config.SpaceLockKey)
+	if err != nil {
+		log.Errorf("DeleteSpace(), create etcd locker failed: %v", err)
+		c.JSON(http.StatusOK, gin.H{"code": 103, "msg": "etcd locker create failed"})
+		return
+	}
+	etcd_locker.TryLock(ctx, 20, 200)
+	etcdKey := common.GetSpaceEtcdPrefix(req.DbName, req.SpaceName)
 	keys, spaces_detail, _ := ca.etcdCli.PrefixScan(ctx, etcdKey)
 	if len(keys) == 1 && len(spaces_detail) == 1 {
 		space_key := string(keys[0])
 		if err := ca.etcdCli.Delete(ctx, space_key); err != nil {
 			log.Error("delete space_name: %s failed, err:%v", req.SpaceName, err)
 			c.JSON(http.StatusOK, gin.H{"code": 103, "msg": "delete faile."})
+			etcd_locker.Close()
 			return
 		}
 		busySpaceList := entity.SpaceList{}
@@ -296,10 +304,9 @@ func (ca *ClusterAPI) deleteSpace(c *gin.Context) {
 		concurrent.ParallelExecuteWithResults(deleteOneSpaceImpl, routerTasks, 10)
 	} else {
 		c.JSON(http.StatusOK, gin.H{"code": 104, "msg": fmt.Sprintf("db_name=%s and space_name=%s is not exist", req.DbName, req.SpaceName)})
+		etcd_locker.Close()
 		return
 	}
-	if err := ca.etcdCli.Delete(ctx, etcdKey); err != nil {
-		log.Error("for delete space, etcd delete key:%s failed", etcdKey)
-	}
+	etcd_locker.UnlockAndClose(ctx)
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "success"})
 }
