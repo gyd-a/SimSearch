@@ -18,7 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func ValidateNameAndGetIdlePsNode(ctx context.Context, space *entity.Space, etcdCli *EtcdCli) (idlePsLiss []entity.Replica, e_str string) {
+func ValidateNameAndGetIdlePsNode(ctx context.Context, space *entity.Space, etcdCli *EtcdCli) (idlePsList []entity.Replica, e_str string) {
 	ps_keys, ps_vals, _ := etcdCli.PrefixScan(ctx, config.PsNodePrefix)
 	replicaList := entity.ReplicaList{}
 	replicaList.DeserializeFromByte(ps_keys, ps_vals)
@@ -31,11 +31,11 @@ func ValidateNameAndGetIdlePsNode(ctx context.Context, space *entity.Space, etcd
 		e_str = fmt.Sprintf("DB_name + space_name[%s] already exists, Please reset DB_name and Space_name.",
 			db_and_space_name)
 		log.Error(e_str)
-		return idlePsLiss, e_str
+		return idlePsList, e_str
 	}
-	busyPsKeyMap := busySpaceList.GetAllPsKeyMap()
-	idlePsLiss = replicaList.GetAllIdlePsKeys(busyPsKeyMap)
-	return idlePsLiss, e_str
+	busyPsKeyMap := busySpaceList.GetAllPsKeyMap(config.PsNodePrefix)
+	idlePsList = replicaList.GetAllIdlePsKeys(busyPsKeyMap)
+	return idlePsList, e_str
 }
 
 func ParallelQueryPsCreateSpace(space *entity.Space, operation string) (e_str string) {
@@ -233,7 +233,7 @@ func deleteOneSpaceImpl(args delTaskArgs) (string, error) {
 			args.nodeType, delUrl, err, resp.Status.Msg, resp_str)
 		return resp_str, nil
 	}
-	log.Info("Delete %s Space url:%s, success delete", args.nodeType, delUrl)
+	log.Info("delete %s Space url:%s, success delete", args.nodeType, delUrl)
 	return "", nil
 }
 
@@ -261,9 +261,9 @@ func (ca *ClusterAPI) deleteSpace(c *gin.Context) {
 	}
 	etcd_locker.TryLock(ctx, 20, 200)
 	etcdKey := common.GetSpaceEtcdPrefix(req.DbName, req.SpaceName)
-	keys, spaces_detail, _ := ca.etcdCli.PrefixScan(ctx, etcdKey)
-	if len(keys) == 1 && len(spaces_detail) == 1 {
-		space_key := string(keys[0])
+	// keys, spaces_detail, _ := ca.etcdCli.PrefixScan(ctx, etcdKey)
+	if space_detail, e := ca.etcdCli.Get(ctx, etcdKey); e == nil && space_detail != nil {
+		space_key := etcdKey
 		if err := ca.etcdCli.Delete(ctx, space_key); err != nil {
 			log.Error("delete space_name: %s failed, err:%v", req.SpaceName, err)
 			c.JSON(http.StatusOK, gin.H{"code": 103, "msg": "delete faile."})
@@ -271,7 +271,7 @@ func (ca *ClusterAPI) deleteSpace(c *gin.Context) {
 			return
 		}
 		busySpaceList := entity.SpaceList{}
-		busySpaceList.DeserializeFromByteList(spaces_detail)
+		busySpaceList.DeserializeFromByteList([][]byte{space_detail})
 
 		var tasks []delTaskArgs
 		for _, space_info := range busySpaceList.NameToSpace {

@@ -13,37 +13,35 @@ import (
 
 // space/[dbId]/[spaceId]:[spaceBody]
 type Space struct {
-	DbName            string            `json:"db_name"`
-	SpaceName         string            `json:"space_name"` //user setting
-	PartitionNum      uint              `json:"partition_num"`
-	ReplicaNum        uint              `json:"replica_num"`
-	Fields            []Field           `json:"fields"`
-	Partitions        []Partition       `json:"partitions,omitempty"` // partitionids not sorted
-	CreateTime        string            `json:"create_time,omitempty"`           // 2022-12-12 12:12:12+毫秒时间戳
-	UpdateTime        string            `json:"update_time,omitempty"` // 2022-12-12 12:12:12+毫秒时间戳
+	DbName       string      `json:"db_name"`
+	SpaceName    string      `json:"space_name"` //user setting
+	PartitionNum uint        `json:"partition_num"`
+	ReplicaNum   uint        `json:"replica_num"`
+	Fields       []Field     `json:"fields"`
+	Partitions   []Partition `json:"partitions,omitempty"`  // partitionids not sorted
+	CreateTime   string      `json:"create_time,omitempty"` // 2022-12-12 12:12:12+毫秒时间戳
+	UpdateTime   string      `json:"update_time,omitempty"` // 2022-12-12 12:12:12+毫秒时间戳
 }
 
-
 type Partition struct {
-	PartitionId       int               `json:"partition_id"`
-	GroupName         string            `json:"group_name"`
-	Replicas          []Replica         `json:"replicas"`    // leader in replicas
-	CreateTime        string            `json:"create_time,omitempty"`           // 2022-12-12 12:12:12+毫秒时间戳
-	UpdateTime        string            `json:"update_time,omitempty"` // 2022-12-12 12:12:12+毫秒时间戳
+	PartitionId int       `json:"partition_id"`
+	GroupName   string    `json:"group_name"`
+	Replicas    []Replica `json:"replicas"`              // leader in replicas
+	CreateTime  string    `json:"create_time,omitempty"` // 2022-12-12 12:12:12+毫秒时间戳
+	UpdateTime  string    `json:"update_time,omitempty"` // 2022-12-12 12:12:12+毫秒时间戳
 }
 
 type Field struct {
-	Name              string            `json:"name"`
-	Type              string            `json:"type"`
-	Dimension         uint              `json:"dimension,omitempty"`
-	Index             *Index            `json:"index,omitempty"`
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	Dimension uint   `json:"dimension,omitempty"`
+	Index     *Index `json:"index,omitempty"`
 }
 
 type Index struct {
-	Type              string           `json:"type"`
-	Params            string           `json:"params,omitempty"`
+	Type   string `json:"type"`
+	Params string `json:"params,omitempty"`
 }
-
 
 func (s *Space) GetAllNodeKeys() (nodeKeys []string) {
 	nodeKeys = make([]string, 0)
@@ -65,7 +63,7 @@ func (s *Space) SerializeToJson() ([]byte, error) {
 	return jsonBytes, err
 }
 
-func (s *Space) Validate() (string) {
+func (s *Space) Validate() string {
 	if err_str := NameValidate(s.DbName); err_str != "" {
 		err_str = "DbName 格式错误：" + err_str
 		log.Error(err_str)
@@ -81,7 +79,7 @@ func (s *Space) Validate() (string) {
 		log.Error(err_str)
 		return err_str
 	}
-	if s.ReplicaNum <= 0 || s.ReplicaNum % 2 == 0 || s.ReplicaNum > 5 {
+	if s.ReplicaNum <= 0 || s.ReplicaNum%2 == 0 || s.ReplicaNum > 5 {
 		err_str := fmt.Sprintf("ReplicaNum[%d] error, it should in (1, 3, 5)", s.ReplicaNum)
 		log.Error(err_str)
 		return err_str
@@ -96,7 +94,7 @@ func (s *Space) Validate() (string) {
 	return ""
 }
 
-func NameValidate(s string) (string) {
+func NameValidate(s string) string {
 	// 条件 1：长度 > 5
 	if len(s) <= 5 {
 		return "长度应该 > 5"
@@ -114,7 +112,7 @@ func NameValidate(s string) (string) {
 }
 
 type SpaceList struct {
-	NameToSpace          map[string]Space
+	NameToSpace map[string]Space
 }
 
 func (sl *SpaceList) DeserializeFromByteList(spaceJsonList [][]byte) {
@@ -125,7 +123,7 @@ func (sl *SpaceList) DeserializeFromByteList(spaceJsonList [][]byte) {
 			log.Error("unmarshal json of ETCD space to Space struct, json:%s error: %v", spaceJson, err)
 			continue
 		}
-		sl.NameToSpace[s.DbName + ":" + s.SpaceName] = s
+		sl.NameToSpace[s.DbName+":"+s.SpaceName] = s
 	}
 }
 
@@ -135,7 +133,7 @@ func (sl *SpaceList) SerializeToJsonList() (nameToSpaceJson map[string]string) {
 		spaceJson, err := json.Marshal(space)
 		if err != nil {
 			log.Error("marshal space of ETCD struct to json, db_and_space_name:%s error: %v",
-					  db_and_space_name, err)
+				db_and_space_name, err)
 			continue
 		}
 		nameToSpaceJson[db_and_space_name] = string(spaceJson)
@@ -143,15 +141,20 @@ func (sl *SpaceList) SerializeToJsonList() (nameToSpaceJson map[string]string) {
 	return nameToSpaceJson
 }
 
-func (sl *SpaceList) GetAllPsKeyMap() (PsKeyMap map[string]string) {
+func (sl *SpaceList) GetAllPsKeyMap(node_key_prefix string) (PsKeyMap map[string]string) {
 	PsKeyMap = make(map[string]string)
 	for _, space := range sl.NameToSpace {
 		for _, partition := range space.Partitions {
 			for _, replica := range partition.Replicas {
-				nodeKey := replica.PsIP + "-" + strconv.Itoa(replica.PsID)
+				// nodeKey := replica.PsIP + "-" + strconv.Itoa(replica.PsID)
+				// key: /nodes/ps/:1:172.24.131.15:8081
+				nodeKey := fmt.Sprintf("%s/:%d:%s:%d", node_key_prefix, replica.PsID, replica.PsIP, replica.PsPort)
 				PsKeyMap[nodeKey] = ""
 			}
 		}
 	}
 	return PsKeyMap
 }
+
+
+

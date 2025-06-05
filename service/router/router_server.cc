@@ -9,9 +9,9 @@
 
 bool RouterServer::Start() {
   std::string restful_mappings =
-      "space/add_space => AddSpace, "
-      "space/list => SpaceList";
-      "space/delete_space => DeleteSpace";
+      "/space/add_space => AddSpace, "
+      "/space/list => SpaceList, "
+      "/space/delete_space => DeleteSpace, ";
   if (_server.AddService(&_space_impl, brpc::SERVER_DOESNT_OWN_SERVICE,
                          restful_mappings) != 0) {
     LOG(ERROR) << "Fail to add RouterSpaceRpcImpl service";

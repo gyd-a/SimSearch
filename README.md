@@ -4,16 +4,16 @@ rocksdb  支持mvcc
 
 TODO:
 
-1、cpp yaml解析；                          --完成
-2、snapshot恢复扩副本问题；                 --完成
-3、master并发建表，删表问题，                --完成
-4、多表测试；
-5、单副本写入失败问题；
-6、节点清除扩副本问题；
-7、进程退出保存etcd，
-8、监控问题、健康借口
-9、ps有space启动注册master失败后还可以启动
-10、master创建表分布式锁, 当有create/delete space失败时，不可进行space操作
+1、cpp yaml解析；                                                    --完成
+2、snapshot恢复扩副本问题；                                            --完成
+3、master并发建表，删表问题，                                           --完成
+4、master创建表分布式锁, 当有create/delete space失败时，不可进行space操作  --doing
+5、多表测试；                                                         --doing
+6、单副本写入失败问题；
+7、节点清除扩副本问题；
+8、进程退出保存etcd，
+9、监控问题、健康借口
+10、ps有space启动注册master失败后还可以启动
 
 
 介入gamma问题:  

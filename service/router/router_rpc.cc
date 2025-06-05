@@ -15,15 +15,16 @@ void RouterSpaceRpcImpl::AddSpace(::google::protobuf::RpcController* controller,
                                   const router_rpc::AddSpaceRequest* req,
                                   router_rpc::AddSpaceResponse* resp,
                                   ::google::protobuf::Closure* done) {
-  LOG(INFO) << "====AddSpace api req:" << req->space().DebugString() << "====";
+  const std::string& db_name = req->space().db_name();
+  const std::string& space_name = req->space().space_name();
+  LOG(INFO) << "====AddSpace api, db_name:" << db_name << ", space_name:" << space_name << "====";
   std::string msg = space_manager.AddSpace(req->space());
   auto status = resp->mutable_status();
   if (msg.size() > 0) {
     status->set_code(101);
     status->set_msg(msg);
   } else {
-    LOG(INFO) << "=========AddSpace success, space_name:" << req->space().space_name()
-              << "=======";
+    LOG(INFO) << "=========AddSpace success, space_name:" << space_name << "=======";
     status->set_code(0);
     status->set_msg("");
   }
@@ -34,20 +35,22 @@ void RouterSpaceRpcImpl::DeleteSpace(
     ::google::protobuf::RpcController* controller,
     const common_rpc::DeleteSpaceRequest* req,
     common_rpc::DeleteSpaceResponse* resp, ::google::protobuf::Closure* done) {
-  LOG(WARNING) << "====DeleteSpace api req:" << req->DebugString() << "====";
-  std::string space_key = GenSpaceKey(req->db_name(), req->space_name());
-  LocalSpaces::GetInstance().DeleteSpace(req->db_name(), req->space_name());
+  const std::string& db_name = req->db_name();
+  const std::string& space_name = req->space_name();
+  LOG(WARNING) << "====DeleteSpace api, db_name:" << db_name << ", space_name:" << space_name << "====";
+  std::string space_key = GenSpaceKey(db_name, space_name);
+  LocalSpaces::GetInstance().DeleteSpace(db_name, space_name);
   LocalSpaces::GetInstance().Save();
   std::string msg = space_manager.DeleteSpace(space_key);
   auto status = resp->mutable_status();
   if (msg.size() > 0) {
     status->set_code(101);
     status->set_msg(msg);
-    LOG(WARNING) << "DeleteSpace[" << req->space_name() << "] failed";
+    LOG(WARNING) << "DeleteSpace[" << space_name << "] failed";
   } else {
     status->set_code(0);
     status->set_msg("success");
-    LOG(WARNING) << "DeleteSpace[" << req->space_name() << "] success:";
+    LOG(WARNING) << "DeleteSpace[" << space_name << "] success:";
   }
   done->Run();
 }

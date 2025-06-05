@@ -11,8 +11,11 @@ func ParallelExecuteWithResults[T any, R any](
 	taskChan := make(chan int, len(argsList)) // 改为发送索引
 	results := make([]R, len(argsList))
 	errors := make([]error, len(argsList))
+	if len(argsList) == 0 {
+		return results, nil
+	}
 	// 启动worker
-	for i := 0; i < maxConcurrency; i++ {
+	for i := 0; i < min(maxConcurrency, len(argsList)); i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
