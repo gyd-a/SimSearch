@@ -18,7 +18,7 @@ type EtcdLocker struct {
 }
 
 // 创建分布式锁
-func CreateEtcdLocker(client *clientv3.Client, lockKey string) (*EtcdLocker, error) {
+func GetEtcdLocker(client *clientv3.Client, lockKey string) (*EtcdLocker, error) {
 	session, err := concurrency.NewSession(client)
 	if err != nil {
 		return nil, fmt.Errorf("创建 session 失败: %w", err)

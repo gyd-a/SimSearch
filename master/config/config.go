@@ -2,12 +2,12 @@ package config
 
 import (
 	"fmt"
+	"master/utils/log"
 	"net"
 	"os"
 	"regexp"
 	"strings"
 	"sync"
-	"master/utils/log"
 
 	"github.com/BurntSushi/toml"
 )
@@ -30,13 +30,26 @@ var (
 	LogInfoPrintSwitch = false
 	Trace              = false
 )
-var NodePrefix        string = "/nodes"
-var PsNodePrefix      string = NodePrefix + "/ps"
-var RouterNodePrefix  string = NodePrefix + "/router"
-var SpaceMataPrefix   string = "/spaces/mata"
-var SpaceLogPrefix    string = "/spaces/log"
-var SpaceLockKey      string = "/spaces/lock"
+var NodesPrefix string = "/nodes"
+var PsNodesPrefix string = NodesPrefix + "/ps"
+var RouterNodesPrefix string = NodesPrefix + "/router"
+var SpacesMataPrefix string = "/spaces/mata"
+var CreatingSpacesMataPrefix string = "/creating_spaces/mata"
+var DeletedSpacesMataPrefix string = "/deleted_spaces/mata"
+var DdlLockKey string = "/ddl/lock"
+var DdlDisabledKey string = "/cluster/ddl_disabled"
+var ErrSpacesPrefix string = "/error/spaces"
+var ErrPsNodesPrefix string = "/error/nodes/ps"
+var ErrLog string = "/error/log"
 
+var EtcdValMaxLen int = 100    // 100KB
+var ErrLogValMaxLen int = 1024 // 1MB
+
+const (
+	GenPsIdKey    = "gen_ps_id"
+	GenSpaceIdKey = "gen_space_id"
+	IdBaseVal     = 0
+)
 
 // SetConfigVersion set the version, time and commit id of build
 func SetConfigVersion(bv, bt, ci string) {
@@ -78,10 +91,10 @@ type Base struct {
 
 type GlobalCfg struct {
 	Base
-	Name              string  `toml:"name,omitempty" json:"name"`
-	ResourceName      string  `toml:"resource_name,omitempty" json:"resource_name"`
-	Path              string  `toml:"path,omitempty" json:"path"`
-	SupportEtcdAuth   bool    `toml:"support_etcd_auth,omitempty" json:"support_etcd_auth"`
+	Name            string `toml:"name,omitempty" json:"name"`
+	ResourceName    string `toml:"resource_name,omitempty" json:"resource_name"`
+	Path            string `toml:"path,omitempty" json:"path"`
+	SupportEtcdAuth bool   `toml:"support_etcd_auth,omitempty" json:"support_etcd_auth"`
 }
 
 type EtcdCfg struct {
@@ -248,12 +261,11 @@ func (config *Config) validatePath() error {
 	return nil
 }
 
-
 func InitConfig(path string) {
 	single = &Config{
-		mu: new(sync.RWMutex),
+		mu:     new(sync.RWMutex),
 		Global: &GlobalCfg{},
-		PS: &PSCfg{},
+		PS:     &PSCfg{},
 	}
 	LoadConfig(single, path)
 }

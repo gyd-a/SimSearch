@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"unicode"
+	"master/common"
 )
 
 // "encoding/json"
@@ -15,8 +16,9 @@ import (
 type Space struct {
 	DbName       string      `json:"db_name"`
 	SpaceName    string      `json:"space_name"` //user setting
-	PartitionNum uint        `json:"partition_num"`
-	ReplicaNum   uint        `json:"replica_num"`
+	Id           int         `json:"id,omitempty"`
+	PartitionNum int         `json:"partition_num"`
+	ReplicaNum   int         `json:"replica_num"`
 	Fields       []Field     `json:"fields"`
 	Partitions   []Partition `json:"partitions,omitempty"`  // partitionids not sorted
 	CreateTime   string      `json:"create_time,omitempty"` // 2022-12-12 12:12:12+毫秒时间戳
@@ -34,13 +36,23 @@ type Partition struct {
 type Field struct {
 	Name      string `json:"name"`
 	Type      string `json:"type"`
-	Dimension uint   `json:"dimension,omitempty"`
+	Dimension int    `json:"dimension,omitempty"`
 	Index     *Index `json:"index,omitempty"`
 }
 
 type Index struct {
 	Type   string `json:"type"`
 	Params string `json:"params,omitempty"`
+}
+
+func CreatePartition(groupName string, partitionId, replicaNum int, timeStr string) Partition {
+	return Partition{
+		PartitionId: partitionId,
+		GroupName:   groupName,
+		Replicas:    make([]Replica, replicaNum),
+		CreateTime:  timeStr,
+		UpdateTime:  timeStr,
+	}
 }
 
 func (s *Space) GetAllNodeKeys() (nodeKeys []string) {
@@ -61,6 +73,13 @@ func (s *Space) SerializeToJson() ([]byte, error) {
 		return nil, err
 	}
 	return jsonBytes, err
+}
+
+func (s *Space) DeserializeFromByte(spaceJson []byte) (err error) {
+	if err := json.Unmarshal(spaceJson, s); err != nil {
+		log.Error("unmarshal space_json to Space struct, json:%s error: %v", string(spaceJson), err)
+	}
+	return err
 }
 
 func (s *Space) Validate() string {
@@ -119,8 +138,7 @@ func (sl *SpaceList) DeserializeFromByteList(spaceJsonList [][]byte) {
 	sl.NameToSpace = make(map[string]Space)
 	for _, spaceJson := range spaceJsonList {
 		var s Space
-		if err := json.Unmarshal(spaceJson, &s); err != nil {
-			log.Error("unmarshal json of ETCD space to Space struct, json:%s error: %v", spaceJson, err)
+		if err := s.DeserializeFromByte(spaceJson); err != nil {
 			continue
 		}
 		sl.NameToSpace[s.DbName+":"+s.SpaceName] = s
@@ -141,20 +159,15 @@ func (sl *SpaceList) SerializeToJsonList() (nameToSpaceJson map[string]string) {
 	return nameToSpaceJson
 }
 
-func (sl *SpaceList) GetAllPsKeyMap(node_key_prefix string) (PsKeyMap map[string]string) {
-	PsKeyMap = make(map[string]string)
+func (sl *SpaceList) GetAllPsMap() (PsMap map[string]Replica) {
+	PsMap = make(map[string]Replica)
 	for _, space := range sl.NameToSpace {
 		for _, partition := range space.Partitions {
 			for _, replica := range partition.Replicas {
-				// nodeKey := replica.PsIP + "-" + strconv.Itoa(replica.PsID)
-				// key: /nodes/ps/:1:172.24.131.15:8081
-				nodeKey := fmt.Sprintf("%s/:%d:%s:%d", node_key_prefix, replica.PsID, replica.PsIP, replica.PsPort)
-				PsKeyMap[nodeKey] = ""
+				nodeKey := common.GetPsNodeName(replica.PsIP, replica.PsPort, replica.PsID)
+				PsMap[nodeKey] = replica
 			}
 		}
 	}
-	return PsKeyMap
+	return PsMap
 }
-
-
-

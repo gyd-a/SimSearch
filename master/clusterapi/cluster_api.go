@@ -15,12 +15,6 @@ import (
 
 type EtcdCli = etcdcluster.EtcdClient
 
-const (
-	GenPsIdKey     = "gen_ps_id"
-	GenRouterIdKey = "gen_router_id"
-	IdBaseVal      = 0
-)
-
 type ClusterAPI struct {
 	etcdCli *EtcdCli
 	httpSer *gin.Engine
@@ -28,7 +22,14 @@ type ClusterAPI struct {
 
 func (ca *ClusterAPI) InitClusterApi(etcdClient *EtcdCli) {
 	ca.etcdCli = etcdClient
-	ca.etcdCli.NewIDGenerate(context.Background(), GenPsIdKey, IdBaseVal)
+	ctx := context.Background()
+	if val, _ := ca.etcdCli.Get(ctx, config.GenPsIdKey); val == nil {
+		ca.etcdCli.NewIDGenerate(ctx, config.GenPsIdKey, config.IdBaseVal)
+	}
+
+	if val, _ := ca.etcdCli.Get(ctx, config.GenSpaceIdKey); val == nil {
+		ca.etcdCli.NewIDGenerate(ctx, config.GenSpaceIdKey, config.IdBaseVal)
+	}
 
 	ca.httpSer = gin.Default()
 	ca.httpSer.GET("/ping", ca.ping)
@@ -63,7 +64,7 @@ func (ca *ClusterAPI) genID(c *gin.Context) {
 		return
 	}
 	ctx := context.Background()
-	genId, _ := ca.etcdCli.NewIDGenerate(ctx, GenPsIdKey, IdBaseVal)
+	genId, _ := ca.etcdCli.NewIDGenerate(ctx, config.GenPsIdKey, config.IdBaseVal)
 	fmt.Printf("gen_id: %d\n", genId)
 	log.Info("-------------gen_id:[%d] success-------------------", genId)
 	c.JSON(http.StatusOK, gin.H{"id": genId, "code": 0, "msg": "success"})

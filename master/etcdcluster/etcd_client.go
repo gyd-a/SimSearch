@@ -27,7 +27,6 @@ import (
 	"go.etcd.io/etcd/client/v3/concurrency"
 )
 
-
 // func init() {
 // 	Register("etcd", NewEtcdClient)
 // }
@@ -102,6 +101,21 @@ func (sc *EtcdClient) GetCli() *clientv3.Client {
 func (sc *EtcdClient) Put(ctx context.Context, key string, value []byte) error {
 	_, err := sc.cli.Put(ctx, key, string(value))
 	return err
+}
+
+func (sc *EtcdClient) PutOrAppend(ctx context.Context, key string, value []byte, maxLenKB int) error {
+	oldValue, err := sc.Get(ctx, key)
+	if err != nil {
+		return fmt.Errorf("EtcdClient PutOrAppend() failed to get key %s, error: %v", key, err)
+	}
+	if oldValue != nil {
+		value = append(oldValue, value...)
+	}
+	maxLenBytes := maxLenKB * 1024
+	if len(value) > maxLenBytes {
+		return fmt.Errorf("EtcdClient PutOrAppend() value len:%d > maxLenBytes: %d", len(value), maxLenBytes)
+	}
+	return sc.Put(ctx, key, value)
 }
 
 // if key already in , it will check version  if same insert else ?????

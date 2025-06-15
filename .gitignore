@@ -7,6 +7,7 @@ braft
 gen_idl
 datas
 .vscode
+sftp.json
 config.toml
 defaut_conf.toml
 master.*.log

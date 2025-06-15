@@ -3,21 +3,17 @@ package etcdcluster
 import (
 	"context"
 	"fmt"
-	"strings"
 	"master/config"
 	"master/utils/log"
-	clientv3 "go.etcd.io/etcd/client/v3"
+	"strings"
 
+	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
-
-
-
 type WatchJob struct {
-	EtcdCli             *EtcdClient
-	watchChan          clientv3.WatchChan
+	EtcdCli   *EtcdClient
+	watchChan clientv3.WatchChan
 }
-
 
 func (wj *WatchJob) InitWatchJob(etcdClient *EtcdClient) {
 	wj.EtcdCli = etcdClient
@@ -25,12 +21,12 @@ func (wj *WatchJob) InitWatchJob(etcdClient *EtcdClient) {
 
 func (wj *WatchJob) Strat() (err error) {
 	ctx := context.Background()
-	if wj.watchChan, err = wj.EtcdCli.WatchPrefix(ctx, config.NodePrefix); err != nil {
+	if wj.watchChan, err = wj.EtcdCli.WatchPrefix(ctx, config.NodesPrefix); err != nil {
 		log.Error("WatchJob StartRouter error: %v", err)
 		return err
 	}
 
-	fmt.Println("开始监听前缀：", config.NodePrefix)
+	log.Infof("开始监听前缀：", config.NodesPrefix)
 	for watchResponse := range wj.watchChan {
 		for _, event := range watchResponse.Events {
 			var nodeType string = "unknown"
@@ -38,7 +34,7 @@ func (wj *WatchJob) Strat() (err error) {
 				nodeType = "router"
 			} else if strings.Contains(string(event.Kv.Key), "ps") {
 				nodeType = "ps"
-			}// else {}
+			} // else {}
 			switch event.Type {
 			case clientv3.EventTypePut:
 				fmt.Printf("节点类型: %s, 上线或修改: %s, 值: %s\n", nodeType, event.Kv.Key, event.Kv.Value)
@@ -54,4 +50,3 @@ func (wj *WatchJob) Strat() (err error) {
 	}
 	return err
 }
-

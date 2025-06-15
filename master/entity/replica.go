@@ -1,9 +1,8 @@
 package entity
 
 import (
+	"master/common"
 	"master/utils/log"
-	"strconv"
-	"strings"
 )
 
 type Replica struct {
@@ -19,31 +18,30 @@ type ReplicaList struct {
 	KeyToPsNode map[string]Replica
 }
 
-func (r *ReplicaList) DeserializeFromByte(nodeKeys [][]byte, vals [][]byte) {
+func (r *ReplicaList) RepDeserializeFromByte(nodeKeys [][]byte, vals [][]byte) {
 	r.KeyToPsNode = make(map[string]Replica)
-	// key: /nodes/ps/:1:172.24.131.15:8081
-	// val: rpc_port
 	for _, nodeKey := range nodeKeys {
-		strNodeKey := string(nodeKey)
+		psIP, psPort, psId := common.ParsePsRegisterKey(string(nodeKey))
+		strNodeKey := common.GetPsNodeName(psIP, psPort, psId)
 		// strVal := string(vals[idx])
 		if _, ok := r.KeyToPsNode[strNodeKey]; ok {
 			log.Error("duplicate ps nodeKey: %s", strNodeKey)
 			continue
 		}
-		// TODO: check nodeKey format
-		parts := strings.Split(strNodeKey, ":")
-		psIP := parts[2]
-		psId, _ := strconv.Atoi(parts[1])
-		psPort, _ := strconv.Atoi(parts[3])
 		r.KeyToPsNode[strNodeKey] = Replica{PsID: psId, PsIP: psIP, PsPort: psPort,
 			IsLeader: 0}
 	}
 }
 
-func (r *ReplicaList) GetAllIdlePsKeys(busyNodeKeys map[string]string) (idleNodes []Replica) {
-	idleNodes = make([]Replica, 0)
+func (r *ReplicaList) GetAllIdlePsKeys(busyNodeKeysList []map[string]Replica) (idleNodes []Replica) {
 	for key, node := range r.KeyToPsNode {
-		if _, ok := busyNodeKeys[key]; !ok {
+		ok := false
+		for _, busyNodeKeys := range busyNodeKeysList {
+			if _, ok = busyNodeKeys[key]; ok {
+				break
+			}
+		}
+		if !ok {
 			idleNodes = append(idleNodes, node)
 		}
 	}
@@ -70,10 +68,7 @@ func (r *RouterReplicaList) DeserializeFromByte(nodeKeys [][]byte, vals [][]byte
 			log.Error("duplicate router nodeKey: %s", strNodeKey)
 			continue
 		}
-		// TODO: check nodeKey format
-		parts := strings.Split(strNodeKey, ":")
-		routerIP := parts[1]
-		routerPort, _ := strconv.Atoi(parts[2])
+		routerIP, routerPort := common.GetRouterNodeEtcdKey(strNodeKey)
 		r.KeyToPsNode[strNodeKey] = RouterReplica{RouterIP: routerIP, RouterPort: routerPort}
 	}
 }

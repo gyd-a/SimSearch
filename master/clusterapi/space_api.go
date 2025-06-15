@@ -3,9 +3,10 @@ package clusterapi
 import (
 	"context"
 	"fmt"
-	"master/config"
+	cfg "master/config"
 	"master/entity"
 	"master/etcdcluster"
+	"master/monitor"
 	"master/utils/concurrent"
 	"master/utils/httputil"
 	"master/utils/log"
@@ -19,10 +20,14 @@ import (
 )
 
 func ValidateNameAndGetIdlePsNode(ctx context.Context, space *entity.Space, etcdCli *EtcdCli) (idlePsList []entity.Replica, e_str string) {
-	ps_keys, ps_vals, _ := etcdCli.PrefixScan(ctx, config.PsNodePrefix)
-	replicaList := entity.ReplicaList{}
-	replicaList.DeserializeFromByte(ps_keys, ps_vals)
-	_, spaces_detail, _ := etcdCli.PrefixScan(ctx, config.SpaceMataPrefix)
+	psKeys, psVals, _ := etcdCli.PrefixScan(ctx, cfg.PsNodesPrefix)
+	errPsKeys, errPsVals, _ := etcdCli.PrefixScan(ctx, cfg.ErrPsNodesPrefix)
+
+	var replicaList, errPeplicaList entity.ReplicaList
+	replicaList.RepDeserializeFromByte(psKeys, psVals)
+	errPeplicaList.RepDeserializeFromByte(errPsKeys, errPsVals)
+
+	_, spaces_detail, _ := etcdCli.PrefixScan(ctx, cfg.SpacesMataPrefix)
 	busySpaceList := entity.SpaceList{}
 	busySpaceList.DeserializeFromByteList(spaces_detail)
 	// TODO: 数据校验
@@ -33,160 +38,281 @@ func ValidateNameAndGetIdlePsNode(ctx context.Context, space *entity.Space, etcd
 		log.Error(e_str)
 		return idlePsList, e_str
 	}
-	busyPsKeyMap := busySpaceList.GetAllPsKeyMap(config.PsNodePrefix)
-	idlePsList = replicaList.GetAllIdlePsKeys(busyPsKeyMap)
+	busyPsKeyMap := busySpaceList.GetAllPsMap()
+	unusableNodeMaps := []map[string]entity.Replica{busyPsKeyMap, errPeplicaList.KeyToPsNode}
+	idlePsList = replicaList.GetAllIdlePsKeys(unusableNodeMaps)
 	return idlePsList, e_str
 }
 
-func ParallelQueryPsCreateSpace(space *entity.Space, operation string) (e_str string) {
-	// 定义任务参数类型
-	type taskArgs struct {
-		partition *entity.Partition
+type taskArgs struct {
+	nodeType string
+	ip       string
+	port     int
+	reqJson  []byte
+}
+
+func HttpOneNode(args taskArgs) (resp entity.CommonResponse, err_str string) {
+	var url string
+	if args.nodeType == "ps_delete" {
+		url = fmt.Sprintf("http://%s:%d/PsService/DeleteSpace", args.ip, args.port)
+	} else if args.nodeType == "router_delete" {
+		url = fmt.Sprintf("http://%s:%d/space/delete_space", args.ip, args.port)
+	} else if args.nodeType == "ps_create" {
+		url = fmt.Sprintf("http://%s:%d/PsService/CreateSpace", args.ip, args.port)
+	} else if args.nodeType == "router_create" {
+		url = fmt.Sprintf("http://%s:%d/space/add_space", args.ip, args.port)
 	}
+	resp_str, err_str := httputil.PostRequest(url, nil, args.reqJson, &resp)
+	if err_str != "" || resp.Status.Code != 0 {
+		log.Errorf("%s space, query Url:%d, error:%v, msg:%s, resp_str:%s",
+			args.nodeType, url, err_str, resp.Status.Msg, resp_str)
+		resp.Status.Msg = fmt.Sprintf("%s, detail: %s", resp.Status.Msg, err_str)
+		return resp, err_str
+	}
+	log.Info("%s Space url:%s success", args.nodeType, url)
+	return resp, err_str
+}
+
+func ParallelCreatePsSpace(space *entity.Space) (failedPsIdxs []int) {
 	// 收集所有任务
 	var tasks []taskArgs
 	for _, partition := range space.Partitions {
-		tasks = append(tasks, taskArgs{
-			partition: &partition,
-		})
-	}
-	// 定义并发执行函数
-	worker := func(args taskArgs) (bool, error) {
-		for _, replica := range (*args.partition).Replicas {
-			createSpaceReq := entity.CreateSpaceRequest{
-				CurPartition: *args.partition,
-				Space:        *space,
-			}
-			log.Info("query Ps_id:%d create space.", replica.PsID)
-			req_json, _ := createSpaceReq.SerializeToJson()
-			url := fmt.Sprintf("http://%s:%d/PsService/CreateSpace", replica.PsIP, replica.PsPort)
-			resp := entity.CreateSpaceResponse{}
-			resp_str, err := httputil.PostRequest(url, nil, req_json, &resp)
-			fmt.Printf("url:%s, req_json:%s, resp_json:%s\n", url, req_json, resp_str)
-			if err != nil || resp.Status.Code != 0 {
-				log.Errorf("query Ps_id:%d create space, error:%v, msg:%s, resp_str:%s",
-					replica.PsID, err, resp.Status.Msg, resp_str)
-				return false, fmt.Errorf("PS %d create space failed: %v", replica.PsID, err)
-				// TODO: 有失败是删除之前创建的space
-			}
+		req := entity.PsCreateSpaceRequest{Space: *space, CurPartition: partition}
+		reqJson, _ := req.SerializeToJson()
+		for _, rep := range partition.Replicas {
+			tasks = append(tasks, taskArgs{
+				nodeType: "ps_create",
+				ip:       rep.PsIP,
+				port:     rep.PsPort,
+				reqJson:  reqJson})
 		}
-		return true, nil
 	}
 	// 并发执行，最大并发数设为10（可根据实际情况调整）
-	_, errs := concurrent.ParallelExecuteWithResults(worker, tasks, 10)
+	respList, errList := concurrent.ParallelExecuteWithResults(HttpOneNode, tasks, 10)
 	// 检查错误
-	for _, err := range errs {
-		if err != nil {
-			return fmt.Sprintf("parallel operation failed: %v", err)
+	for idx, resp := range respList {
+		if errList[idx] != "" || resp.Status.Code != 0 {
+			errRep := space.Partitions[idx/space.PartitionNum].Replicas[idx%space.PartitionNum]
+			log.Errorf("Ps Create space failed, ip:%s port:%d id:%d, space_name:%s, resp code:%d, msg:%s, err:%s",
+				errRep.PsIP, errRep.PsPort, errRep.PsID, space.SpaceName, resp.Status.Code, resp.Status.Msg, errList[idx])
+			failedPsIdxs = append(failedPsIdxs, idx)
 		}
 	}
+	return failedPsIdxs
+}
+
+func ParallelDeletePsSpace(ctx context.Context, space *entity.Space) (failedPsIdxs []int) {
+	req := entity.DeleteSpaceRequest{
+		DbName:    space.DbName,
+		SpaceName: space.SpaceName,
+	}
+	req_json, _ := req.SerializeToJson()
+	var tasks []taskArgs
+	for _, partition_info := range space.Partitions {
+		for _, rep_info := range partition_info.Replicas {
+			tasks = append(tasks, taskArgs{
+				nodeType: "ps_delete",
+				ip:       rep_info.PsIP,
+				port:     rep_info.PsPort,
+				reqJson:  req_json,
+			})
+		}
+	}
+	respList, errList := concurrent.ParallelExecuteWithResults(HttpOneNode, tasks, 10)
+	for idx, resp := range respList {
+		if errList[idx] != "" || resp.Status.Code != 0 {
+			errRep := space.Partitions[idx/space.PartitionNum].Replicas[idx%space.PartitionNum]
+			log.Errorf("Ps Delete space failed, ip:%s port:%d id:%d, space_name:%s, resp code:%d, msg:%s, err:%s",
+				errRep.PsIP, errRep.PsPort, errRep.PsID, space.SpaceName, resp.Status.Code, resp.Status.Msg, errList[idx])
+			failedPsIdxs = append(failedPsIdxs, idx)
+		}
+	}
+	return failedPsIdxs
+}
+
+func DeleteRouterSpace(ctx context.Context, etcdCli *EtcdCli, dbName, spaceName string) {
+	req := entity.DeleteSpaceRequest{
+		DbName:    dbName,
+		SpaceName: spaceName,
+	}
+	req_json, _ := req.SerializeToJson()
+	if router_keys, router_vals, err := etcdCli.PrefixScan(ctx, cfg.RouterNodesPrefix); err == nil {
+		routerReplicaList := entity.RouterReplicaList{}
+		routerReplicaList.DeserializeFromByte(router_keys, router_vals)
+		var routerTasks []taskArgs
+		for _, router := range routerReplicaList.KeyToPsNode {
+			routerTasks = append(routerTasks, taskArgs{
+				nodeType: "router_delete",
+				ip:       router.RouterIP,
+				port:     router.RouterPort,
+				reqJson:  req_json,
+			})
+		}
+		concurrent.ParallelExecuteWithResults(HttpOneNode, routerTasks, 10)
+	} else {
+		log.Error("DeleteRouterSpace(), scan router nodes failed, err: %v", err)
+		return
+	}
+}
+
+func AddRouterSpace(ctx context.Context, etcdCli *EtcdCli, space *entity.Space) (e_str string) {
+	router_keys, router_vals, _ := etcdCli.PrefixScan(ctx, cfg.RouterNodesPrefix)
+	routerReplicaList := entity.RouterReplicaList{}
+	routerReplicaList.DeserializeFromByte(router_keys, router_vals)
+	addSpaceReq := entity.AddSpaceRequest{Space: *space}
+	var tasks []taskArgs
+	req_json, _ := addSpaceReq.SerializeToJson()
+	for _, router := range routerReplicaList.KeyToPsNode {
+		tasks = append(tasks, taskArgs{
+			nodeType: "router_create",
+			ip:       router.RouterIP,
+			port:     router.RouterPort,
+			reqJson:  req_json,
+		})
+	}
+	respList, errList := concurrent.ParallelExecuteWithResults(HttpOneNode, tasks, 10)
+	errCnt := 0
+	for idx, resp := range respList {
+		task := tasks[idx]
+		if errList[idx] != "" || resp.Status.Code != 0 {
+			errCnt += 1
+			log.Error("AddRouterSpace(), router node ip:%s, port:%d, resp code:%d, msg:%s add failed",
+				task.ip, task.port, resp.Status.Code, resp.Status.Msg)
+		}
+	}
+	log.Infof("AddRouterSpace(), add space to router nodes, %d/%d", errCnt, len(respList))
 	return ""
 }
 
-func CreateSpaceImpl(ctx context.Context, etcdCli *EtcdCli, space *entity.Space,
-	idlePsList *[]entity.Replica) (e_str string) {
+func PutNodesErrInfoToEtcd(ctx context.Context, etcdCli *EtcdCli, space *entity.Space,
+	failedIdxs []int, errMsg string) (failedNodesStr string) {
+	if len(failedIdxs) > 0 {
+		for _, idx := range failedIdxs {
+			rep := space.Partitions[idx/space.PartitionNum].Replicas[idx%space.PartitionNum]
+			errPsNodeKey := common.GetErrPsNodeEtcdKey(rep.PsIP, rep.PsPort, rep.PsID)
+			msg := fmt.Sprintf("space_id:%d %s", space.Id, errMsg)
+			etcdCli.PutOrAppend(ctx, errPsNodeKey, []byte(msg), cfg.EtcdValMaxLen)
+			failedNodesStr += fmt.Sprintf("ip:%s, port:%d, id:%d; ", rep.PsIP, rep.PsPort, rep.PsID)
+		}
+	}
+	return failedNodesStr
+}
+
+func CreatePsSpaceImpl(ctx context.Context, etcdCli *EtcdCli, space *entity.Space,
+	idlePsList *[]entity.Replica) (isAbledDdl bool, e_str string) {
+	log_prefix := fmt.Sprintf("CreateSpace(db_name:%s, space_name:%s)", space.DbName, space.SpaceName)
 	timeStr, _, _ := timeutil.GetCurTime()
-	space.CreateTime = timeStr
-	space.UpdateTime = timeStr
-	if len(*idlePsList) < int(space.PartitionNum*space.ReplicaNum) {
-		e_str = fmt.Sprintf("not enough idle PS nodes, need %d, but only %d",
-			space.PartitionNum*space.ReplicaNum, len(*idlePsList))
+	space.CreateTime, space.UpdateTime = timeStr, timeStr
+	if len(*idlePsList) < space.PartitionNum*space.ReplicaNum {
+		e_str = fmt.Sprintf("%s, not enough idle PS nodes, need %d, but only %d, Create space failed",
+			log_prefix, space.PartitionNum*space.ReplicaNum, len(*idlePsList))
 		log.Error(e_str)
-		return e_str
+		return true, e_str
 	}
 
 	var node_idx int = 0
-	for pid := 0; pid < int(space.PartitionNum); pid++ {
-		partition := entity.Partition{
-			PartitionId: pid,
-			GroupName:   fmt.Sprintf("%s:%s:%d", space.DbName, space.SpaceName, pid),
-			Replicas:    make([]entity.Replica, space.ReplicaNum),
-			CreateTime:  timeStr,
-			UpdateTime:  timeStr,
-		}
-		for rid := 0; rid < int(space.ReplicaNum); rid++ {
+	for pid := 0; pid < space.PartitionNum; pid++ {
+		groupName := common.GetPartitionGroupName(space.DbName, space.SpaceName, pid)
+		partition := entity.CreatePartition(groupName, pid, space.ReplicaNum, timeStr)
+		for rid := 0; rid < space.ReplicaNum; rid++ {
 			partition.Replicas[rid] = (*idlePsList)[node_idx]
 			node_idx += 1
 		}
 		space.Partitions = append(space.Partitions, partition)
 	}
+	etcdKey := common.GetSpaceEtcdKey(space.DbName, space.SpaceName)
+	spaceId, _ := etcdCli.NewIDGenerate(ctx, cfg.GenSpaceIdKey, cfg.IdBaseVal)
+	space.Id = int(spaceId)
+	errSpaceKey := common.GetErrSpaceEtcdKey(space.DbName, space.SpaceName, space.Id)
+
 	spaceJson, _ := space.SerializeToJson()
-	if e_str = ParallelQueryPsCreateSpace(space, "create"); len(e_str) > 0 {
-		return e_str
-	}
-	etcdKey := common.GetSpaceEtcdPrefix(space.DbName, space.SpaceName)
-	if e := etcdCli.Put(ctx, etcdKey, spaceJson); e != nil {
-		e_str = "Space Mata info put etcd server error, " + e.Error()
+	etcdCli.Put(ctx, cfg.DdlDisabledKey, append(spaceJson, []byte("; ")...))
+	if failedPsIdxs := ParallelCreatePsSpace(space); len(failedPsIdxs) > 0 {
+		e_str = log_prefix + ", Create ps space failed, deadly error; "
 		log.Error(e_str)
-		if e_str = ParallelQueryPsCreateSpace(space, "delete"); len(e_str) > 0 {
-			return e_str
+		failedNodesStr := PutNodesErrInfoToEtcd(ctx, etcdCli, space, failedPsIdxs, e_str)
+		CreateErrInfo := "create ps space failed; failed nodes: " + failedNodesStr + "; "
+		etcdCli.PutOrAppend(ctx, errSpaceKey, []byte(CreateErrInfo), cfg.EtcdValMaxLen)
+		etcdCli.PutOrAppend(ctx, cfg.DdlDisabledKey, []byte(CreateErrInfo), cfg.EtcdValMaxLen)
+
+		deletedFailedPsIdxs := ParallelDeletePsSpace(ctx, space)
+		failedNodesStr = PutNodesErrInfoToEtcd(ctx, etcdCli, space, deletedFailedPsIdxs, "delete ps space failed; ")
+		if len(failedNodesStr) > 0 {
+			delErrInfo := "delete ps failed nodes: " + failedNodesStr + "; "
+			etcdCli.PutOrAppend(ctx, cfg.DdlDisabledKey, []byte(delErrInfo), cfg.EtcdValMaxLen)
 		}
-		return e_str
+		return false, e_str
 	}
-	log.Info("db_name:%s, space_name:%s, Create space successful !!!", space.DbName, space.SpaceName)
-	return ""
+	if e := etcdCli.Put(ctx, etcdKey, spaceJson); e != nil {
+		e_str = fmt.Sprintf("%s, Put space mata info to etcd failed, deadly error:%v; ", log_prefix, e.Error())
+		log.Error(e_str)
+		etcdCli.PutOrAppend(ctx, errSpaceKey, []byte(e_str), cfg.EtcdValMaxLen)
+		deletedFailedPsIdxs := ParallelDeletePsSpace(ctx, space)
+		if failedNodesStr := PutNodesErrInfoToEtcd(ctx, etcdCli, space, deletedFailedPsIdxs, e_str); len(failedNodesStr) > 0 {
+			etcdCli.PutOrAppend(ctx, cfg.DdlDisabledKey, []byte("delete ps failed nodes: "+failedNodesStr+"; "), cfg.EtcdValMaxLen)
+		}
+		return false, e_str
+	}
+	etcdCli.Delete(ctx, cfg.DdlDisabledKey)
+	return true, ""
 }
 
-func QueryRouterAddSpaceApi(ctx context.Context, etcdCli *EtcdCli, space *entity.Space) (e_str string) {
-	router_keys, router_vals, _ := etcdCli.PrefixScan(ctx, config.RouterNodePrefix)
-	routerReplicaList := entity.RouterReplicaList{}
-	routerReplicaList.DeserializeFromByte(router_keys, router_vals)
-	for _, router := range routerReplicaList.KeyToPsNode {
-		addSpaceReq := entity.AddSpaceRequest{Space: *space}
-		addSpaceReq.Space = *space
-		log.Info("query router_ip:%s add space.", router.RouterIP)
-		req_json, _ := addSpaceReq.SerializeToJson()
-		url := fmt.Sprintf("http://%s:%d/space/add_space", router.RouterIP, router.RouterPort)
-		resp := entity.AddSpaceResponse{}
-		fmt.Printf("url:%s, req_json:%s\n", url, req_json)
-		resp_str, err := httputil.PostRequest(url, nil, req_json, resp)
-
-		if err != nil || resp.Status.Code != 0 {
-			log.Errorf("query url:%s add space, error:%v, msg:%s, resp_str:%s",
-				url, err, resp.Status.Msg, resp_str)
-		}
+func (ca *ClusterAPI) ValidateCreateSpaceParam(c *gin.Context) (space entity.Space, err_str string) {
+	// 尝试将请求中的 JSON 绑定到 space 结构体
+	if err := c.ShouldBindJSON(&space); err != nil {
+		log.Errorf("create_space api request params error: %v", err)
+		return space, "params error " + err.Error()
 	}
-	return ""
+	if unvalid_str := space.Validate(); len(unvalid_str) > 0 {
+		return space, unvalid_str
+	}
+	return space, ""
 }
 
 func (ca *ClusterAPI) createSpace(c *gin.Context) {
 	log.Info("-------------create_space api-------------------")
-	var space entity.Space
-	// 尝试将请求中的 JSON 绑定到 space 结构体
-	if err := c.ShouldBindJSON(&space); err != nil {
-		log.Errorf("create_space api request params error: %v", err)
-		c.JSON(http.StatusOK, gin.H{"code": 10, "msg": "params error " + err.Error()})
+	ctx, code, msg_str, ddlLocker := context.Background(), 10, "", (*etcdcluster.EtcdLocker)(nil)
+	space, isDdlAbled, idlePsNode, err := entity.Space{}, true, []entity.Replica{}, error(nil)
+	defer func() {
+		if ddlLocker != nil {
+			ddlLocker.UnlockAndClose(ctx)
+		}
+		c.JSON(http.StatusOK, gin.H{"code": code, "msg": msg_str})
+	}()
+	space, msg_str = ca.ValidateCreateSpaceParam(c)
+	log_prefix := fmt.Sprintf("CreateSpace(db_name:%s, space_name:%s)", space.DbName, space.SpaceName)
+	if msg_str != "" {
 		return
 	}
-	if unvalid_str := space.Validate(); len(unvalid_str) > 0 {
-		c.JSON(http.StatusOK, gin.H{"code": 11, "msg": unvalid_str})
-		return
-	}
-	etcd_locker, err := etcdcluster.CreateEtcdLocker(ca.etcdCli.GetCli(), config.SpaceLockKey)
+	ddlLocker, err = etcdcluster.GetEtcdLocker(ca.etcdCli.GetCli(), cfg.DdlLockKey)
 	if err != nil {
-		log.Errorf("create etcd locker failed: %v", err)
-		c.JSON(http.StatusOK, gin.H{"code": 12, "msg": "etcd locker create failed"})
+		msg_str = fmt.Sprintf("%s, get etcd locker failed: %v", log_prefix, err)
+		log.Error(msg_str)
 		return
 	}
-	ctx := context.Background()
-	if etcd_locker.TryLock(ctx, 20, 200) != nil {
-		c.JSON(http.StatusOK, gin.H{"code": 13, "msg": "get etcd locker failed"})
+	if ddlLocker.TryLock(ctx, 20, 200) != nil {
+		msg_str = log_prefix + ", get etcd locker failed"
 		return
 	}
-	idlePsNode, e_str := ValidateNameAndGetIdlePsNode(ctx, &space, ca.etcdCli)
-	if len(e_str) > 0 {
-		etcd_locker.UnlockAndClose(ctx)
-		c.JSON(http.StatusOK, gin.H{"code": 14, "msg": e_str})
+	if val, e := ca.etcdCli.Get(ctx, cfg.DdlDisabledKey); e != nil || val != nil {
+		msg_str = fmt.Sprintf("%s, cluster has error, cannot create space.", log_prefix)
+		log.Error(msg_str)
 		return
 	}
-	if e_str = CreateSpaceImpl(ctx, ca.etcdCli, &space, &idlePsNode); len(e_str) > 0 {
-		etcd_locker.UnlockAndClose(ctx)
-		c.JSON(http.StatusOK, gin.H{"code": 15, "msg": e_str})
+	idlePsNode, msg_str = ValidateNameAndGetIdlePsNode(ctx, &space, ca.etcdCli)
+	if len(msg_str) > 0 {
 		return
 	}
-	etcd_locker.UnlockAndClose(ctx)
-	QueryRouterAddSpaceApi(ctx, ca.etcdCli, &space)
-	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "success"})
+	if isDdlAbled, msg_str = CreatePsSpaceImpl(ctx, ca.etcdCli, &space, &idlePsNode); len(msg_str) > 0 {
+		if !isDdlAbled {
+			code = 100
+		}
+	} else {
+		AddRouterSpace(ctx, ca.etcdCli, &space)
+		msg_str = "success"
+		code = 0
+		log.Info("%s, Create space successful !!!", log_prefix)
+	}
 }
 
 func (ca *ClusterAPI) spaceList(c *gin.Context) {
@@ -200,7 +326,7 @@ func (ca *ClusterAPI) spaceList(c *gin.Context) {
 		return
 	}
 	ctx := context.Background()
-	_, spaces_detail, _ := ca.etcdCli.PrefixScan(ctx, config.SpaceMataPrefix)
+	_, spaces_detail, _ := ca.etcdCli.PrefixScan(ctx, cfg.SpacesMataPrefix)
 	spaceList := entity.SpaceList{}
 	spaceList.DeserializeFromByteList(spaces_detail)
 	resp := entity.SpaceListRespone{Code: 0, Msg: ""}
@@ -212,101 +338,69 @@ func (ca *ClusterAPI) spaceList(c *gin.Context) {
 	}
 }
 
-type delTaskArgs struct {
-	nodeType string
-	ip       string
-	port     int
-	reqJson  []byte
-}
-
-func deleteOneSpaceImpl(args delTaskArgs) (string, error) {
-	var delUrl string
-	if args.nodeType == "ps" {
-		delUrl = fmt.Sprintf("http://%s:%d/PsService/DeleteSpace", args.ip, args.port)
-	} else if args.nodeType == "router" {
-		delUrl = fmt.Sprintf("http://%s:%d/space/delete_space", args.ip, args.port)
-	}
-	resp := entity.DeleteSpaceResponse{}
-	resp_str, err := httputil.PostRequest(delUrl, nil, args.reqJson, &resp)
-	if err != nil || resp.Status.Code != 0 {
-		log.Errorf("delete %s space, query Url:%d, error:%v, msg:%s, resp_str:%s",
-			args.nodeType, delUrl, err, resp.Status.Msg, resp_str)
-		return resp_str, nil
-	}
-	log.Info("delete %s Space url:%s, success delete", args.nodeType, delUrl)
-	return "", nil
-}
-
 func (ca *ClusterAPI) deleteSpace(c *gin.Context) {
 	log.Info("-------------create_space api-------------------")
-	var req entity.DeleteSpaceRequest
+	ctx, code, msg_str, ddlLocker := context.Background(), 100, "", (*etcdcluster.EtcdLocker)(nil)
+	req, err := entity.DeleteSpaceRequest{}, error(nil)
+	defer func() {
+		if ddlLocker != nil {
+			ddlLocker.UnlockAndClose(ctx)
+		}
+		c.JSON(http.StatusOK, gin.H{"code": code, "msg": msg_str})
+	}()
 	// 尝试将请求中的 JSON 绑定到 space 结构体
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Errorf("delete_space api request params error: %v", err)
-		c.JSON(http.StatusOK, gin.H{"code": 101, "msg": "params error " + err.Error()})
+	if err = c.ShouldBindJSON(&req); err != nil {
+		msg_str, code = "delete_space api request params error: "+err.Error(), 10
+		log.Errorf(msg_str)
 		return
 	}
-	req_json, err_str := req.SerializeToJson()
-	if err_str != "" {
-		log.Errorf("delete_space api request to json error: %v", err_str)
-		c.JSON(http.StatusOK, gin.H{"code": 102, "msg": "params error " + err_str})
+	log_prefix := fmt.Sprintf("DeleteSpace(db_name:%s, space_name:%s)", req.DbName, req.SpaceName)
+	if ddlLocker, err = etcdcluster.GetEtcdLocker(ca.etcdCli.GetCli(), cfg.DdlLockKey); err != nil {
+		code = 10
+		msg_str = fmt.Sprintf("%s failed, get etcd locker failed: %v", log_prefix, err)
+		log.Errorf(msg_str)
 		return
 	}
-	ctx := context.Background()
-	etcd_locker, err := etcdcluster.CreateEtcdLocker(ca.etcdCli.GetCli(), config.SpaceLockKey)
-	if err != nil {
-		log.Errorf("DeleteSpace(), create etcd locker failed: %v", err)
-		c.JSON(http.StatusOK, gin.H{"code": 103, "msg": "etcd locker create failed"})
-		return
-	}
-	etcd_locker.TryLock(ctx, 20, 200)
-	etcdKey := common.GetSpaceEtcdPrefix(req.DbName, req.SpaceName)
-	// keys, spaces_detail, _ := ca.etcdCli.PrefixScan(ctx, etcdKey)
-	if space_detail, e := ca.etcdCli.Get(ctx, etcdKey); e == nil && space_detail != nil {
-		space_key := etcdKey
-		if err := ca.etcdCli.Delete(ctx, space_key); err != nil {
-			log.Error("delete space_name: %s failed, err:%v", req.SpaceName, err)
-			c.JSON(http.StatusOK, gin.H{"code": 103, "msg": "delete faile."})
-			etcd_locker.Close()
+	ddlLocker.TryLock(ctx, 20, 200)
+	spaceEtcdKey := common.GetSpaceEtcdKey(req.DbName, req.SpaceName)
+	if space_detail, e := ca.etcdCli.Get(ctx, spaceEtcdKey); e == nil && space_detail != nil {
+		if val, e := ca.etcdCli.Get(ctx, cfg.DdlDisabledKey); e != nil || val != nil {
+			msg_str = fmt.Sprintf("%s, cluster has error, cannot create space.", log_prefix)
+			log.Error(msg_str)
 			return
 		}
-		busySpaceList := entity.SpaceList{}
-		busySpaceList.DeserializeFromByteList([][]byte{space_detail})
-
-		var tasks []delTaskArgs
-		for _, space_info := range busySpaceList.NameToSpace {
-			for _, partition_info := range space_info.Partitions {
-				for _, rep_info := range partition_info.Replicas {
-					tasks = append(tasks, delTaskArgs{
-						nodeType: "ps",
-						ip:       rep_info.PsIP,
-						port:     rep_info.PsPort,
-						reqJson:  req_json,
-					})
-				}
-			}
+		space := entity.Space{}
+		if err = space.DeserializeFromByte(space_detail); err != nil {
+			msg_str = fmt.Sprintf("%s, deserialize space_json failed, err: %v; ", log_prefix, err)
+			monitor.AddErrorInfo("deserialize_space_json", 3, msg_str)
+			ca.etcdCli.PutOrAppend(ctx, cfg.ErrLog, []byte(msg_str), cfg.ErrLogValMaxLen)
+			log.Error(msg_str)
+			return
 		}
-		concurrent.ParallelExecuteWithResults(deleteOneSpaceImpl, tasks, 10)
-		// TODO: 处理删除失败的ps
-
-		router_keys, router_vals, _ := ca.etcdCli.PrefixScan(ctx, config.RouterNodePrefix)
-		routerReplicaList := entity.RouterReplicaList{}
-		routerReplicaList.DeserializeFromByte(router_keys, router_vals)
-		var routerTasks []delTaskArgs
-		for _, router := range routerReplicaList.KeyToPsNode {
-			routerTasks = append(routerTasks, delTaskArgs{
-				nodeType: "router",
-				ip:       router.RouterIP,
-				port:     router.RouterPort,
-				reqJson:  req_json,
-			})
+		deletedSpaceKey := common.GetDeletedSpaceEtcdKey(req.DbName, req.SpaceName, space.Id)
+		errSpaceKey := common.GetErrSpaceEtcdKey(req.DbName, req.SpaceName, space.Id)
+		ca.etcdCli.Put(ctx, deletedSpaceKey, space_detail)
+		ca.etcdCli.Put(ctx, cfg.DdlDisabledKey, []byte(log_prefix))
+		if err = ca.etcdCli.Delete(ctx, spaceEtcdKey); err != nil {
+			monitor.AddErrorInfo("delete etcd space infor error", 3, log_prefix)
+			ca.etcdCli.PutOrAppend(ctx, errSpaceKey, []byte("delete etcd space info failed; "), cfg.EtcdValMaxLen)
+			log.Error("%s delete etcd space failed, deadly error:%v", log_prefix, err)
+			return
 		}
-		concurrent.ParallelExecuteWithResults(deleteOneSpaceImpl, routerTasks, 10)
+		DeleteRouterSpace(ctx, ca.etcdCli, req.DbName, req.SpaceName)
+		if failedPsIdxs := ParallelDeletePsSpace(ctx, &space); len(failedPsIdxs) > 0 {
+			failedNodesStr := PutNodesErrInfoToEtcd(ctx, ca.etcdCli, &space, failedPsIdxs, log_prefix+" delete ps space failed; ")
+			ca.etcdCli.PutOrAppend(ctx, errSpaceKey, []byte("delete ps space failed; failed nodes: "+failedNodesStr), cfg.EtcdValMaxLen)
+			ca.etcdCli.Delete(ctx, cfg.DdlDisabledKey)
+			msg_str = fmt.Sprintf("%s delete ps space failed, deadly error nodes:%s", log_prefix, failedNodesStr)
+			log.Error(msg_str)
+			return
+		}
+		ca.etcdCli.Delete(ctx, cfg.DdlDisabledKey)
+		ca.etcdCli.PutOrAppend(ctx, deletedSpaceKey, []byte("; success"), cfg.EtcdValMaxLen)
+		code, msg_str = 0, "success"
 	} else {
-		c.JSON(http.StatusOK, gin.H{"code": 104, "msg": fmt.Sprintf("db_name=%s and space_name=%s is not exist", req.DbName, req.SpaceName)})
-		etcd_locker.Close()
-		return
+		code, msg_str = 10, fmt.Sprintf("%s is not exist", log_prefix)
+		log.Error("%s, delete space failed, err: %v", log_prefix, e)
 	}
-	etcd_locker.UnlockAndClose(ctx)
-	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "success"})
 }

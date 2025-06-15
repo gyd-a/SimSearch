@@ -4,13 +4,13 @@ import (
 	"sync"
 )
 
-func ParallelExecuteWithResults[T any, R any](
-	fn func(T) (R, error) /*  */, argsList []T, maxConcurrency int,
-) ([]R, []error) {
+func ParallelExecuteWithResults[T any, R any, E any](
+	fn func(T) (R, E) /*  */, argsList []T, maxConcurrency int,
+) ([]R, []E) {
 	var wg sync.WaitGroup
 	taskChan := make(chan int, len(argsList)) // 改为发送索引
 	results := make([]R, len(argsList))
-	errors := make([]error, len(argsList))
+	errors := make([]E, len(argsList))
 	if len(argsList) == 0 {
 		return results, nil
 	}

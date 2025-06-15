@@ -36,23 +36,19 @@ type Status struct {
 	Msg             string         `json:"msg"`
 }
 
-type CreateSpaceRequest struct {
+type PsCreateSpaceRequest struct {
 	Space          Space             `json:"space"`
 	CurPartition   Partition         `json:"cur_partition"`
 }
 
-func (csr *CreateSpaceRequest) SerializeToJson() (res []byte, e_str string) {
+func (csr *PsCreateSpaceRequest) SerializeToJson() (res []byte, e_str string) {
 	seriJson, err := json.Marshal(csr)
 	if err != nil {
-		e_str := fmt.Sprintf("marshal CreateSpaceRequest struct to json, error: %v", err)
+		e_str := fmt.Sprintf("marshal PsCreateSpaceRequest struct to json, error: %v", err)
 		log.Error(e_str)
 		return nil, e_str
 	}
 	return seriJson, ""
-}
-
-type CreateSpaceResponse struct {
-	Status       Status            `json:"status"`
 }
 
 // router AddSpace api
@@ -70,15 +66,11 @@ func (asr *AddSpaceRequest) SerializeToJson() (res []byte, e_str string) {
 	return seriJson, ""
 }
 
-type AddSpaceResponse struct {
-	Status       Status            `json:"status"`
-}
-
 type DeleteSpaceRequest struct {
 	DbName       string            `json:"db_name"`
 	SpaceName    string            `json:"space_name"`
 }
-type DeleteSpaceResponse struct {
+type CommonResponse struct {
 	Status        Status            `json:"status"`
 }
 
