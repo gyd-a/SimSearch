@@ -15,7 +15,7 @@ class LocalStorager {
 
   PsLocalNodeMata& PsNodeMata() { return _ps_node_mata; }
 
-  std::pair<std::string, std::string> GenPsNodeKeyAndValue();
+  std::pair<std::string, std::string> GetPsReisterKV();
 
   std::string GetRaftRoot();
 

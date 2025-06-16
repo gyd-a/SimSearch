@@ -31,17 +31,17 @@ func GetIPList(keyByteList [][]byte) []string {
 }
 
 func GetPsNodeName(IP string, Port, Id int) string {
-	return fmt.Sprintf(":%d:%s:%d", Id, IP, Port)
+	return fmt.Sprintf(":%s:%d:%d", IP, Port, Id)
 }
 
 func ParsePsRegisterKey(key string) (IP string, Port, Id int) {
-	// key: /nodes/ps/:1:172.24.131.15:8081
+	// key: /nodes/ps/:172.24.131.15:8081:1
 	// val: rpc_port
 	// TODO: key format check
 	parts := strings.Split(key, ":")
-	IP = parts[2]
-	Id, _ = strconv.Atoi(parts[1])
-	Port, _ = strconv.Atoi(parts[3])
+	IP = parts[1]
+	Id, _ = strconv.Atoi(parts[3])
+	Port, _ = strconv.Atoi(parts[2])
 	return IP, Port, Id
 }
 

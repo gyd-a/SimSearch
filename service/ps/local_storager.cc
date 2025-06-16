@@ -120,12 +120,9 @@ std::string LocalStorager::DeleteSpace(const std::string& db_name, const std::st
 }
 
 
-std::pair<std::string, std::string> LocalStorager::GenPsNodeKeyAndValue() {
-  std::ostringstream node_key_oss;
-  node_key_oss << _ps_register_prefix << ":" << _ps_node_mata.PsId() << ":"
-               << _ps_node_mata.PsIP() << ":" << _ps_node_mata.PsPort();
-
-  return {node_key_oss.str(), std::to_string(_ps_node_mata.PsPort())};
+std::pair<std::string, std::string> LocalStorager::GetPsReisterKV() {
+  return  GetPsRegisterKV(
+      _ps_node_mata.PsIP(), _ps_node_mata.PsPort(), _ps_node_mata.PsId());
 }
 
 std::string LocalStorager::GetRaftRoot() {

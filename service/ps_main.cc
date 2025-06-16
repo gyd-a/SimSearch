@@ -15,6 +15,7 @@
 #include "raft_store/raft_store.h"
 #include "service/ps/brpc_server.h"
 #include "service/ps/local_storager.h"
+#include "common/common.h"
 
 DEFINE_string(ip, "", "IP of etcd server");
 DEFINE_string(port, "", "port of etcd server");
@@ -43,7 +44,7 @@ int main(int argc, char* argv[]) {
 
   BrpcServer* brpc_sv = new BrpcServer();
 
-  auto[node_K, node_V] = local_store.GenPsNodeKeyAndValue();
+  auto[node_K, node_V] = local_store.GetPsReisterKV();
   brpc::EtcdClient etcd_cli;
   LOG(INFO) << "ps_node_key:" << node_K << ", value:" << node_V;
   if (etcd_cli.Init(toml_conf_.GetMasterIpPorts()) == false) {
