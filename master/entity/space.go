@@ -164,7 +164,7 @@ func (sl *SpaceList) GetAllPsMap() (PsMap map[string]Replica) {
 	for _, space := range sl.NameToSpace {
 		for _, partition := range space.Partitions {
 			for _, replica := range partition.Replicas {
-				nodeKey := common.GetPsNodeName(replica.PsIP, replica.PsPort, replica.PsID)
+				nodeKey := common.GetPsNodeName(replica.PsIP, replica.PsPort)
 				PsMap[nodeKey] = replica
 			}
 		}

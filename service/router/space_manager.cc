@@ -16,7 +16,7 @@
 #include "utils/random.h"
 
 std::string SpaceManager::Init(int16_t max_space_num,
-                               std::shared_ptr<brpc::EtcdClient>& etcd_client) {
+                               brpc::EtcdClient* etcd_client) {
   std::string msg;
   _spaces_conn.reserve(max_space_num);
   this->_etcd_client = etcd_client;

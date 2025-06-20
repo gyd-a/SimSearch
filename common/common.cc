@@ -24,3 +24,16 @@ std::pair<std::string, std::string> GetPsRegisterKV(const std::string& IP, int p
   node_key_oss << _ps_register_prefix << ":" << IP << ":" << port << ":" << ps_id;
   return {node_key_oss.str(), std::to_string(port)};
 }
+
+
+std::string GetPsRegisterKeyPrefixWithIpAndPort(const std::string& IP, int port) {
+  std::ostringstream node_key_oss;
+  node_key_oss << _ps_register_prefix << ":" << IP << ":" << port << ":";
+  return node_key_oss.str();
+}
+
+std::string GenRouterNodeKey(const std::string& node_IP, int port) {
+  std::ostringstream node_key_oss;
+  node_key_oss << _router_register_prefix << ":" << node_IP << ":" << port;
+  return node_key_oss.str();
+};

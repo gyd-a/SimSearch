@@ -18,8 +18,7 @@
 
 class SpaceManager {
  public:
-  std::string Init(int16_t max_space_num,
-                   std::shared_ptr<brpc::EtcdClient>& etcd_client);
+  std::string Init(int16_t max_space_num, brpc::EtcdClient* etcd_client);
 
   std::string AddSpace(const common_rpc::Space& pb_space);
 
@@ -54,6 +53,6 @@ class SpaceManager {
 
   std::vector<std::shared_ptr<SpaceConnection>> _spaces_conn;
   OneWriterMultiReaderMap _space_idx_mp;
-  std::shared_ptr<brpc::EtcdClient> _etcd_client;
+  brpc::EtcdClient* _etcd_client;
   std::mutex _mtx;
 };

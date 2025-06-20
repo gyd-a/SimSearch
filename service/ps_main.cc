@@ -2,12 +2,14 @@
 #include <butil/logging.h>
 #include <gflags/gflags.h>
 // #include <glog/logging.h>
+#include <unistd.h>
+
 #include <memory>
 #include <thread>
 
-#include <unistd.h>
 #include "butil/base64.h"
 #include "clients/etcd_client.h"
+#include "common/common.h"
 #include "config/conf.h"
 #include "engine/engine.h"
 #include "google/protobuf/util/json_util.h"
@@ -15,7 +17,7 @@
 #include "raft_store/raft_store.h"
 #include "service/ps/brpc_server.h"
 #include "service/ps/local_storager.h"
-#include "common/common.h"
+#include "service/ps/ps_register.h"
 
 DEFINE_string(ip, "", "IP of etcd server");
 DEFINE_string(port, "", "port of etcd server");
@@ -42,37 +44,32 @@ int main(int argc, char* argv[]) {
   }
   Engine::GetInstance().Init(_ps_storage_dir);
 
-  BrpcServer* brpc_sv = new BrpcServer();
+  std::unique_ptr<BrpcServer> brpc_sv = std::make_unique<BrpcServer>();
 
-  auto[node_K, node_V] = local_store.GetPsReisterKV();
-  brpc::EtcdClient etcd_cli;
-  LOG(INFO) << "ps_node_key:" << node_K << ", value:" << node_V;
-  if (etcd_cli.Init(toml_conf_.GetMasterIpPorts()) == false) {
-    LOG(ERROR) << "****** Etcd client init error, Ps process exit ******";
-    return -1;
-  }
   if (brpc_sv->Start().size() != 0) {
     LOG(ERROR) << "****** start brpc error, Ps process exit ******";
     return -1;
   }
-
-  if (local_store.PsNodeMata().HasSpace()) {
+  auto& mata = local_store.PsNodeMata();
+  if (mata.HasSpace()) {
     LOG(INFO) << "local file has space, start load Raft.";
-    RaftManager::GetInstance().CreateBlock();
+    auto& raft_mgr = RaftManager::GetInstance();
+    raft_mgr.CreateBlock();
     std::string root_path, grp, conf;
     int port = 0;
     local_store.GetRaftParams(root_path, grp, conf, port);
-    if (RaftManager::GetInstance()
-            .StartRaftServer(root_path, grp, conf, local_store.PsNodeMata().PsIP(), port)
-            .size() > 0) {
+    if (raft_mgr.StartRaftServer(root_path, grp, conf, mata.IP(), port).size() > 0) {
       LOG(ERROR) << "restart Raft error, server not write, only read.";
     }
   }
 
-  etcd_cli.RegisterNodeWithKeepAlive(node_K, node_V,
-                                     toml_conf_.ps.hearbeat_interval_s);
-  brpc_sv->WaitBrpcStop();
-  delete brpc_sv;
-  brpc_sv = nullptr;
+  auto& regist = PsRegister::GetInstance();
+  regist.Init(mata.IP(), mata.Port(), mata.Id());
+  if (regist.LaunchRegister(mata.HasSpace()) == 0) {
+    brpc_sv->WaitBrpcStop();
+  } else {
+    LOG(ERROR) << "****** register ps node error, Ps process exit ******";
+    mata.DeleteNodeInfo();
+  }
   return 0;
 }

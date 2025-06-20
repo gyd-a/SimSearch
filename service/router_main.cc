@@ -17,16 +17,12 @@
 #include "service/router/router_server.h"
 #include "service/router/space_manager.h"
 #include "utils/net.h"
+#include "common/common.h"
+#include "service/router/router_register.h"
 
 DEFINE_string(ip, "", "local ip");
 DEFINE_string(port, "", "running port");
 DEFINE_string(conf, "config.toml", "conf path");
-
-std::string GenRouterNodeKey(const std::string& node_IP, int port) {
-  std::ostringstream node_key_oss;
-  node_key_oss << _router_register_prefix << ":" << node_IP << ":" << port;
-  return node_key_oss.str();
-};
 
 int main(int argc, char* argv[]) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -48,28 +44,20 @@ int main(int argc, char* argv[]) {
 
   LocalSpaces::GetInstance().Init(_router_store_path, "local_spaces.json");
 
-  std::string router_node_key =
-      GenRouterNodeKey(_cur_IP, toml_conf_.router.port);
-  std::shared_ptr<brpc::EtcdClient> etcd_cli(new brpc::EtcdClient());
-  LOG(INFO) << "router_node_key:" << router_node_key;
-  if (etcd_cli->Init(toml_conf_.GetMasterIpPorts()) == false) {
-    LOG(ERROR) << "****** Etcd client init error, Router process exit ******";
-    return -1;
-  }
+  auto& regist = RouterRegister::GetInstance();
+  regist.Init(_cur_IP, toml_conf_.router.port);
   std::shared_ptr<RouterServer> router_sv(new RouterServer());
   if (router_sv->Start() != 0) {
     LOG(ERROR) << "****** start brpc error, Router process exit ******";
     return -1;
   }
 
-  if (SpaceManager::GetInstance().Init(1000, etcd_cli).size() > 0) {
+  if (SpaceManager::GetInstance().Init(1000, regist.EtcdCli()).size() > 0) {
     LOG(ERROR) << "***** Failed to init SpaceManager ******";
     return -1;
   }
 
-  etcd_cli->RegisterNodeWithKeepAlive(router_node_key, "test_value",
-                                      toml_conf_.router.hearbeat_interval_s);
-
+  regist.LaunchRegister();
   router_sv->WaitBrpcStop();
   return 0;
 }

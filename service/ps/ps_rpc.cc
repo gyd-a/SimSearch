@@ -8,8 +8,8 @@
 #include <brpc/server.h>          // brpc::Server
 #include <butil/sys_byteorder.h>  // butil::NetToHost32
 #include <fcntl.h>                // open
-#include <sys/types.h>            // O_CREAT
 #include <google/protobuf/util/json_util.h>
+#include <sys/types.h>  // O_CREAT
 
 #include <string>
 
@@ -54,6 +54,7 @@ void PsRpcImpl::CreateSpace(::google::protobuf::RpcController* controller,
                             ps_rpc::CreateSpaceResponse* resp,
                             ::google::protobuf::Closure* done) {
   auto& local_store = LocalStorager::GetInstance();
+  auto& mata = local_store.PsNodeMata();
   std::string req_json;
   google::protobuf::util::MessageToJsonString(*req, &req_json);
   // TODO: 保存建表语句
@@ -61,9 +62,9 @@ void PsRpcImpl::CreateSpace(::google::protobuf::RpcController* controller,
   RaftManager& raft_mgr = RaftManager::GetInstance();
   common_rpc::RespStatus* status = resp->mutable_status();  // 获取可修改指针
   std::lock_guard<std::mutex> lock(raft_mgr.mtx());
-  if (local_store.PsNodeMata().HasSpace()) {
-    std::string msg = "Space has exist, space_name:" +
-                      local_store.PsNodeMata().SpaceReq().space().space_name();
+  if (mata.HasSpace()) {
+    std::string msg =
+        "Space has exist, space_name:" + mata.SpaceReq().space().space_name();
     LOG(ERROR) << "=============" << msg << "=============";
     status->set_code(201);
     status->set_msg(msg);
@@ -71,7 +72,7 @@ void PsRpcImpl::CreateSpace(::google::protobuf::RpcController* controller,
     return;
   }
 
-  local_store.PsNodeMata().SetCreateSapceReq(*req);
+  mata.SetCreateSapceReq(*req);
   std::string root_path, group, conf;
   int port = 0;
   local_store.GetRaftParams(root_path, group, conf, port);
@@ -79,26 +80,26 @@ void PsRpcImpl::CreateSpace(::google::protobuf::RpcController* controller,
   if (msg.size() > 0) {
     status->set_code(201);
     status->set_msg(msg);
-    local_store.PsNodeMata().SetCreateSapceReq(ps_rpc::CreateSpaceRequest());
+    mata.SetCreateSapceReq(ps_rpc::CreateSpaceRequest());
     done->Run();
     return;
   }
   raft_mgr.CreateBlock();
-  msg = raft_mgr.StartRaftServer(root_path, group, conf, local_store.PsNodeMata().PsIP(), port);
+  msg = raft_mgr.StartRaftServer(root_path, group, conf, mata.IP(), port);
   status->set_code(0);
   status->set_msg("");
   if (msg.size() > 0) {
     status->set_code(202);
     status->set_msg(msg);
-    local_store.PsNodeMata().SetCreateSapceReq(ps_rpc::CreateSpaceRequest());
+    mata.SetCreateSapceReq(ps_rpc::CreateSpaceRequest());
     done->Run();
     return;
   }
-  msg = local_store.PsNodeMata().DumpCreateSpaceReq();
+  msg = mata.DumpCreateSpaceReq();
   if (msg.size() > 0) {
     status->set_code(203);
     status->set_msg(msg);
-    local_store.PsNodeMata().SetCreateSapceReq(ps_rpc::CreateSpaceRequest());
+    mata.SetCreateSapceReq(ps_rpc::CreateSpaceRequest());
   }
   done->Run();
 }
@@ -112,13 +113,12 @@ void PsRpcImpl::DeleteSpace(::google::protobuf::RpcController* controller,
   LOG(WARNING) << "Query DeleteSpace rpc, req_json:" << req_json;
   RaftManager& raft_mgr = RaftManager::GetInstance();
   auto& local_store = LocalStorager::GetInstance();
+  auto& mata = local_store.PsNodeMata();
   auto status = resp->mutable_status();
   std::lock_guard<std::mutex> lock(raft_mgr.mtx());
-  if (local_store.PsNodeMata().DbName() != req->db_name() ||
-      local_store.PsNodeMata().SpaceName() != req->space_name()) {
-    LOG(WARNING) << "request db_name:" << local_store.PsNodeMata().DbName()
-                 << " space_name:" << local_store.PsNodeMata().SpaceName()
-                 << " is not exist. delete failed.";
+  if (mata.DbName() != req->db_name() || mata.SpaceName() != req->space_name()) {
+    LOG(WARNING) << "request db_name:" << mata.DbName()
+                 << " space_name:" << mata.SpaceName() << " is not exist. delete failed.";
     status->set_code(201);
     status->set_msg("db_name and space_name is not exist.");
     done->Run();
@@ -133,8 +133,7 @@ void PsRpcImpl::DeleteSpace(::google::protobuf::RpcController* controller,
 }
 
 void PsRpcImpl::Get(::google::protobuf::RpcController* controller,
-                    const ::common_rpc::GetRequest* req,
-                    ::common_rpc::GetResponse* resp,
+                    const ::common_rpc::GetRequest* req, ::common_rpc::GetResponse* resp,
                     ::google::protobuf::Closure* done) {
   done->Run();
 }

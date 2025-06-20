@@ -49,6 +49,7 @@ const (
 	GenPsIdKey    = "gen_ps_id"
 	GenSpaceIdKey = "gen_space_id"
 	IdBaseVal     = 0
+	PsNodeTTL     = 5  // 5s
 )
 
 // SetConfigVersion set the version, time and commit id of build

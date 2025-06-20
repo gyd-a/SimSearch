@@ -22,10 +22,10 @@ func (r *ReplicaList) RepDeserializeFromByte(nodeKeys [][]byte, vals [][]byte) {
 	r.KeyToPsNode = make(map[string]Replica)
 	for _, nodeKey := range nodeKeys {
 		psIP, psPort, psId := common.ParsePsRegisterKey(string(nodeKey))
-		strNodeKey := common.GetPsNodeName(psIP, psPort, psId)
+		strNodeKey := common.GetPsNodeName(psIP, psPort)
 		// strVal := string(vals[idx])
 		if _, ok := r.KeyToPsNode[strNodeKey]; ok {
-			log.Error("duplicate ps nodeKey: %s", strNodeKey)
+			log.Error("duplicate ps nodeKey: [%s]", strNodeKey)
 			continue
 		}
 		r.KeyToPsNode[strNodeKey] = Replica{PsID: psId, PsIP: psIP, PsPort: psPort,

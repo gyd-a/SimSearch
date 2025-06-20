@@ -185,7 +185,7 @@ func AddRouterSpace(ctx context.Context, etcdCli *EtcdCli, space *entity.Space) 
 }
 
 func PutNodesErrInfoToEtcd(ctx context.Context, etcdCli *EtcdCli, space *entity.Space,
-	failedIdxs []int, errMsg string) (failedNodesStr string) {
+						   failedIdxs []int, errMsg string) (failedNodesStr string) {
 	if len(failedIdxs) > 0 {
 		for _, idx := range failedIdxs {
 			rep := space.Partitions[idx/space.PartitionNum].Replicas[idx%space.PartitionNum]
@@ -199,7 +199,7 @@ func PutNodesErrInfoToEtcd(ctx context.Context, etcdCli *EtcdCli, space *entity.
 }
 
 func CreatePsSpaceImpl(ctx context.Context, etcdCli *EtcdCli, space *entity.Space,
-	idlePsList *[]entity.Replica) (isAbledDdl bool, e_str string) {
+					   idlePsList *[]entity.Replica) (isAbledDdl bool, e_str string) {
 	log_prefix := fmt.Sprintf("CreateSpace(db_name:%s, space_name:%s)", space.DbName, space.SpaceName)
 	timeStr, _, _ := timeutil.GetCurTime()
 	space.CreateTime, space.UpdateTime = timeStr, timeStr

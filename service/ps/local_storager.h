@@ -15,8 +15,6 @@ class LocalStorager {
 
   PsLocalNodeMata& PsNodeMata() { return _ps_node_mata; }
 
-  std::pair<std::string, std::string> GetPsReisterKV();
-
   std::string GetRaftRoot();
 
   bool GetRaftParams(std::string& root_path, std::string& group, std::string& conf,
@@ -35,5 +33,4 @@ class LocalStorager {
 
   // Other member functions and variables can be declared here
   PsLocalNodeMata _ps_node_mata;
-  std::vector<std::string> _master_addrs;
 };
