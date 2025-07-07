@@ -2,47 +2,72 @@ package entity
 
 import (
 	"encoding/json"
-	"fmt"
+	// "fmt"
+	"master/common"
 	"master/utils/log"
 	"regexp"
 	"strconv"
 	"unicode"
-	"master/common"
 )
 
 // "encoding/json"
 
 // space/[dbId]/[spaceId]:[spaceBody]
-type Space struct {
+type ApiSpace struct {
 	DbName       string      `json:"db_name"`
 	SpaceName    string      `json:"space_name"` //user setting
 	Id           int         `json:"id,omitempty"`
 	PartitionNum int         `json:"partition_num"`
 	ReplicaNum   int         `json:"replica_num"`
-	Fields       []Field     `json:"fields"`
-	Partitions   []Partition `json:"partitions,omitempty"`  // partitionids not sorted
-	CreateTime   string      `json:"create_time,omitempty"` // 2022-12-12 12:12:12+毫秒时间戳
-	UpdateTime   string      `json:"update_time,omitempty"` // 2022-12-12 12:12:12+毫秒时间戳
+	Fields       []ApiField  `json:"fields"`
+	Partitions   []Partition `json:"partitions,omitempty"` // partitionids not sorted
+	IdType       string      `json:"_id_type,omitempty"`
+
+	Ctime string `json:"ctime,omitempty"` // 2022-12-12 12:12:12+毫秒时间戳
+	Mtime string `json:"mtime,omitempty"` // 2022-12-12 12:12:12+毫秒时间戳
+}
+
+func (s *ApiSpace) Validate() string {
+	return CheckApiSpace(s)
+}
+
+func (s *ApiSpace) ToInnerSpace() InnerSpace {
+	return ApiSpaceToInnerSpace(s)
+}
+
+type InnerSpace struct {
+	DbName       string       `json:"db_name"`
+	SpaceName    string       `json:"space_name"` //user setting
+	Id           int          `json:"id,omitempty"`
+	PartitionNum int          `json:"partition_num"`
+	ReplicaNum   int          `json:"replica_num"`
+	Fields       []InnerField `json:"fields"`
+	Partitions   []Partition  `json:"partitions,omitempty"` // partitionids not sorted
+	IdType       string       `json:"_id_type,omitempty"`
+
+	Ctime string `json:"ctime,omitempty"` // 2022-12-12 12:12:12+毫秒时间戳
+	Mtime string `json:"mtime,omitempty"` // 2022-12-12 12:12:12+毫秒时间戳
 }
 
 type Partition struct {
 	PartitionId int       `json:"partition_id"`
 	GroupName   string    `json:"group_name"`
-	Replicas    []Replica `json:"replicas"`              // leader in replicas
-	CreateTime  string    `json:"create_time,omitempty"` // 2022-12-12 12:12:12+毫秒时间戳
-	UpdateTime  string    `json:"update_time,omitempty"` // 2022-12-12 12:12:12+毫秒时间戳
+	Replicas    []Replica `json:"replicas"`        // leader in replicas
+	Ctime       string    `json:"ctime,omitempty"` // 2022-12-12 12:12:12+毫秒时间戳
+	Mtime       string    `json:"mtime,omitempty"` // 2022-12-12 12:12:12+毫秒时间戳
 }
 
-type Field struct {
-	Name      string `json:"name"`
-	Type      string `json:"type"`
-	Dimension int    `json:"dimension,omitempty"`
-	Index     *Index `json:"index,omitempty"`
+type ApiField struct {
+	Name      string    `json:"name"`
+	Type      string    `json:"type"`
+	Dimension int       `json:"dimension,omitempty"`
+	Index     *ApiIndex `json:"index,omitempty"`
 }
-
-type Index struct {
-	Type   string `json:"type"`
-	Params string `json:"params,omitempty"`
+type InnerField struct {
+	Name      string      `json:"name"`
+	Type      string      `json:"type"`
+	Dimension int         `json:"dimension,omitempty"`
+	Index     *InnerIndex `json:"index,omitempty"`
 }
 
 func CreatePartition(groupName string, partitionId, replicaNum int, timeStr string) Partition {
@@ -50,12 +75,12 @@ func CreatePartition(groupName string, partitionId, replicaNum int, timeStr stri
 		PartitionId: partitionId,
 		GroupName:   groupName,
 		Replicas:    make([]Replica, replicaNum),
-		CreateTime:  timeStr,
-		UpdateTime:  timeStr,
+		Ctime:       timeStr,
+		Mtime:       timeStr,
 	}
 }
 
-func (s *Space) GetAllNodeKeys() (nodeKeys []string) {
+func (s *InnerSpace) GetAllNodeKeys() (nodeKeys []string) {
 	nodeKeys = make([]string, 0)
 	for _, partition := range s.Partitions {
 		for _, replica := range partition.Replicas {
@@ -66,7 +91,7 @@ func (s *Space) GetAllNodeKeys() (nodeKeys []string) {
 	return nodeKeys
 }
 
-func (s *Space) SerializeToJson() ([]byte, error) {
+func (s *InnerSpace) SerializeToJson() ([]byte, error) {
 	jsonBytes, err := json.Marshal(s)
 	if err != nil {
 		log.Error("marshal Space struct to json, error: %v", err)
@@ -75,42 +100,11 @@ func (s *Space) SerializeToJson() ([]byte, error) {
 	return jsonBytes, err
 }
 
-func (s *Space) DeserializeFromByte(spaceJson []byte) (err error) {
+func (s *InnerSpace) DeserializeFromByte(spaceJson []byte) (err error) {
 	if err := json.Unmarshal(spaceJson, s); err != nil {
 		log.Error("unmarshal space_json to Space struct, json:%s error: %v", string(spaceJson), err)
 	}
 	return err
-}
-
-func (s *Space) Validate() string {
-	if err_str := NameValidate(s.DbName); err_str != "" {
-		err_str = "DbName 格式错误：" + err_str
-		log.Error(err_str)
-		return err_str
-	}
-	if err_str := NameValidate(s.SpaceName); err_str != "" {
-		err_str = "Space Name 格式错误：" + err_str
-		log.Error(err_str)
-		return err_str
-	}
-	if s.PartitionNum <= 0 || s.PartitionNum > 100 {
-		err_str := fmt.Sprintf("PartitionNum[%d] error, num range [1, 100]", s.PartitionNum)
-		log.Error(err_str)
-		return err_str
-	}
-	if s.ReplicaNum <= 0 || s.ReplicaNum%2 == 0 || s.ReplicaNum > 5 {
-		err_str := fmt.Sprintf("ReplicaNum[%d] error, it should in (1, 3, 5)", s.ReplicaNum)
-		log.Error(err_str)
-		return err_str
-	}
-	if len(s.Partitions) != 0 {
-		err_str := "CreateSpace api, Partitions info should is null"
-		log.Error(err_str)
-		return err_str
-	}
-	// TODO: Field字段校验
-	fmt.Print("Space data Validate pass\n")
-	return ""
 }
 
 func NameValidate(s string) string {
@@ -131,13 +125,13 @@ func NameValidate(s string) string {
 }
 
 type SpaceList struct {
-	NameToSpace map[string]Space
+	NameToSpace map[string]InnerSpace
 }
 
 func (sl *SpaceList) DeserializeFromByteList(spaceJsonList [][]byte) {
-	sl.NameToSpace = make(map[string]Space)
+	sl.NameToSpace = make(map[string]InnerSpace)
 	for _, spaceJson := range spaceJsonList {
-		var s Space
+		var s InnerSpace
 		if err := s.DeserializeFromByte(spaceJson); err != nil {
 			continue
 		}
@@ -164,7 +158,7 @@ func (sl *SpaceList) GetAllPsMap() (PsMap map[string]Replica) {
 	for _, space := range sl.NameToSpace {
 		for _, partition := range space.Partitions {
 			for _, replica := range partition.Replicas {
-				nodeKey := common.GetPsNodeName(replica.PsIP, replica.PsPort, replica.PsID)
+				nodeKey := common.GetPsNodeName(replica.PsIP, replica.PsPort)
 				PsMap[nodeKey] = replica
 			}
 		}

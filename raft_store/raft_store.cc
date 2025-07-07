@@ -2,8 +2,9 @@
 
 #include "raft_store/raft_store.h"
 #include <butil/file_util.h>
-#include <butil/logging.h>
+#include "utils/log.h"
 #include "config/conf.h"
+#include "common/dto.h"
 
 // Implementation of example::Block as a braft::StateMachine.
 
@@ -13,12 +14,14 @@ Block::~Block() { delete _node; }
 
 // Starts this node
 int Block::start(const std::string& root_path, const std::string& group,
-                 const std::string& conf, const std::string& my_ip, int port) {
+                 const std::string& conf, const std::string& my_ip, int port,
+                 const common_rpc::Space& space) {
   _root_path = root_path;
   _group = group;
   _conf = conf;
   _port = port;
   _check_term = true;
+  _space = space;
   if (!butil::CreateDirectory(butil::FilePath(_root_path))) {
     LOG(ERROR) << "Fail to create directory " << _root_path;
     return -1;
@@ -104,7 +107,7 @@ void Block::write(const raft_rpc::BlockRequest* request,
 
 void Block::read(const raft_rpc::BlockRequest* request, raft_rpc::BlockResponse* response,
                  butil::IOBuf* buf) {
-#ifndef DEBUG_BUILD
+#ifndef DEBUG_
   std::string dkeys;
   auto docs_info = request->docs_info();
   for (int i = 0; i < docs_info.size(); ++i) {
@@ -119,33 +122,35 @@ void Block::read(const raft_rpc::BlockRequest* request, raft_rpc::BlockResponse*
     return redirect(response);
   }
 
-  if (request->docs_info().size() < 0) {
-    response->set_success(false);
-    response->set_msg("request docs_info size is 0");
-    LOG(ERROR) << "request docs_info size is 0";
-    return;
-  }
-
   // This is the leader and is up-to-date. It's safe to respond client
   scoped_fd fd = get_fd();
   butil::IOPortal portal;
   // int offset = atoi(request->key_list()[0].c_str()) * request->data_size();
   // const ssize_t nr = braft::file_pread(&portal, fd->fd(), offset,
   // request->data_size());
-  std::vector<int32_t> keys, doc_lengths;
-  const auto& doc_infos = request->docs_info();
-  for (int i = 0; i < doc_infos.size(); ++i) {
-    keys.push_back(atoi(doc_infos[i].key().c_str()));
+
+  vearch::Doc gamma_doc;
+  std::string doc_key = request->key();
+  int code = gamma_cpp_api::GetDocByID(doc_key, gamma_doc);
+  std::string data_buf, msg;
+  if (code != 0) {
+    msg = "gamma engine get failed, key:" + doc_key;
+    LOG(ERROR) << msg;
+    response->set_msg(msg);
+    response->set_success(false);
+    return;
   }
-  std::string data_buf;
-  Engine::GetInstance().Mget(keys, doc_lengths, data_buf);
-  portal.append(data_buf);
-  for (int i = 0; i < doc_infos.size(); ++i) {
-    auto p_doc_info = response->add_docs_info();
-    p_doc_info->set_key(doc_infos[i].key());
-    p_doc_info->set_doc_len(doc_lengths[i]);
+
+  auto pb_doc = GammaDocToPbDoc(gamma_doc);
+  if (!pb_doc.SerializeToString(&data_buf)) {
+    msg = "SerializeToString gamma_doc failed, key:" + doc_key;
+    LOG(ERROR) << msg;
+    response->set_msg(msg);
+    response->set_success(false);
+    return;
   }
-  response->set_key_type(request->key_type());
+
+
   int nr = 11;
   if (nr < 0) {
     // Some disk error occurred, shutdown this node and another leader
@@ -155,6 +160,7 @@ void Block::read(const raft_rpc::BlockRequest* request, raft_rpc::BlockResponse*
     response->set_success(false);
     return;
   }
+  portal.append(data_buf);
   buf->swap(portal);
   // if (buf->length() < (size_t)request->data_size()) {
   //   buf->resize(request->data_size());
@@ -202,7 +208,6 @@ void Block::on_apply(braft::Iterator& iter) {
     // avoid that callback blocks the StateMachine
     braft::AsyncClosureGuard closure_guard(iter.done());
     butil::IOBuf data;
-    std::vector<std::pair<int32_t, int16_t>> doc_infos;
     if (iter.done()) {
       DLOG(INFO) << "********* on_apply() function go in iter.done() "
                     "*********";
@@ -213,14 +218,6 @@ void Block::on_apply(braft::Iterator& iter) {
       // c->request()->data_size();
       data.swap(*(c->data()));
       response = c->response();
-      const auto& pb_doc_infos = c->request()->docs_info();
-      for (int i = 0; i < pb_doc_infos.size(); ++i) {
-        auto doc_info = pb_doc_infos[i];
-        int32_t key = atoi(doc_info.key().c_str());
-        int16_t doc_len = doc_info.doc_len();
-        doc_infos.emplace_back(key, doc_len);
-      }
-      test_id = c->request()->test_id();
     } else {
       DLOG(INFO) << "********** on_apply() function go in iter.done()=false "
                     "**********";
@@ -237,28 +234,46 @@ void Block::on_apply(braft::Iterator& iter) {
       raft_rpc::BlockRequest request;
       CHECK(request.ParseFromZeroCopyStream(&wrapper));
       data.swap(saved_log);
-      // offset = atoi(request.key_list()[0].c_str()) * request.data_size();
-      const auto& pb_doc_infos = request.docs_info();
-      for (int i = 0; i < pb_doc_infos.size(); ++i) {
-        auto doc_info = pb_doc_infos[i];
-        int32_t key = atoi(doc_info.key().c_str());
-        int16_t doc_len = doc_info.doc_len();
-        doc_infos.emplace_back(key, doc_len);
-      }
-      test_id = request.test_id();
     }
-
-    std::string data_buf;
+    std::string data_buf, msg;
     data.copy_to(&data_buf);
-    DLOG(INFO) << "******** on_apply() test_id:" << test_id << " ********";
-    // const ssize_t nw = braft::file_pwrite(data, _fd->fd(), offset);
-    std::string msg = Engine::GetInstance().BatchAdd(doc_infos, data_buf);
-    DLOG(INFO) << "***** on_apply() Engine BatchAdd msg:[" << msg << "] *****";
-    // if (msg.size() > 0 || test_id > 0) {
-    if (false) {
+    common_rpc::Document pb_doc;
+    if (!pb_doc.ParseFromString(data_buf)) {
+      msg = "Fail to parse UpsertRequest from request stream";
+      LOG(ERROR) << msg;
+      if (response) {
+        response->set_success(false);
+        response->set_msg(msg);
+      }
+      // Let raft run this closure.
+      closure_guard.release();
+      iter.set_error_and_rollback();
+      return;
+    }
+    std::string cmsg = CheckPbDoc(pb_doc);
+    if (msg.size() == 0) {
+      vearch::Doc gamma_doc;
+      PbDocToGammaDoc(pb_doc, _space, gamma_doc);
+      // const ssize_t nw = braft::file_pwrite(data, _fd->fd(), offset);
+      int code = gamma_cpp_api::AddOrUpdateDoc(gamma_doc);
+      if (code != 0) {
+        msg = "Fail to write doc to gamma, code: " + std::to_string(code);
+        LOG(ERROR) << msg;
+        if (response) {
+          response->set_success(false);
+          response->set_msg(msg);
+        }
+        // Let raft run this closure.
+        closure_guard.release();
+        iter.set_error_and_rollback();
+        return;
+      }
+      DLOG(INFO) << "***** on_apply() Engine AddOrUpdateDoc success *****";
+    } else {
       LOG(ERROR) << "*** on_apply() Write Engine fail, msg:[" << msg << "] ***";
       if (response) {
         response->set_success(false);
+        response->set_msg(msg);
       }
       // Let raft run this closure.
       closure_guard.release();
@@ -451,7 +466,8 @@ Block* RaftManager::block() { return _block; }
 std::string RaftManager::StartRaftServer(const std::string& root_path,
                                          const std::string& group,
                                          const std::string& conf,
-                                         const std::string& my_ip, int port) {
+                                         const std::string& my_ip, int port,
+                                         const common_rpc::Space& space) {
   LOG(INFO) << "StartRaftServer, root_path:[" << root_path << "] group:[" << group
             << "] conf:[" << conf << "] port:[" << port << "]";
   if (_block == nullptr) {
@@ -460,7 +476,7 @@ std::string RaftManager::StartRaftServer(const std::string& root_path,
     return msg;
   }
   // It's ok to start Block
-  if (_block->start(root_path, group, conf, my_ip, port) != 0) {
+  if (_block->start(root_path, group, conf, my_ip, port, space) != 0) {
     std::string msg = "Fail to start Block";
     LOG(ERROR) << msg;
     return msg;

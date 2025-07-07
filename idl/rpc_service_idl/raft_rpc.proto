@@ -5,15 +5,11 @@ package raft_rpc;
 
 option cc_generic_services = true;
 
-message DocInfo {
-    optional string  key                 = 1;
-    int32            doc_len             = 2;
-    string           msg                 = 3;
-}
 
-enum WriteType {
+enum ImplType {
     UPSERT = 0;
     DELETE = 1;
+    READ   = 3;
 }
 enum KeyType {
     INT64  = 0;
@@ -21,20 +17,17 @@ enum KeyType {
 }
 
 message BlockRequest {
-    repeated DocInfo            docs_info        = 1;
-    optional KeyType            key_type         = 2;
-    optional WriteType          write_type       = 3;
-    optional string             db_name          = 4;
-    optional string             space_name       = 5;
-    int32 test_id                                = 6;
+    string             db_name                           = 1;
+    string             space_name                        = 2;
+    ImplType           impl_type                         = 3;
+    KeyType            key_type                          = 4;
+    string             key                               = 5;
 }
 
 message BlockResponse {
     optional bool               success                  = 1;
     string                      redirect                 = 2;
-    repeated DocInfo            docs_info                = 3;
-    KeyType                     key_type                 = 4;
-    string                      msg                      = 5;
+    string                      msg                      = 3;
 }
 
 service PsRaftService {

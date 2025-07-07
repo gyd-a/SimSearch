@@ -12,6 +12,7 @@
 #include <mutex>
 
 #include "idl/gen_idl/rpc_service_idl/raft_rpc.pb.h"
+#include "idl/gen_idl/rpc_service_idl/common_rpc.pb.h"
 
 #include "engine/engine.h"
 
@@ -72,7 +73,8 @@ class Block : public braft::StateMachine {
   ~Block();
   // Starts this node
   int start(const std::string& root_path, const std::string& group, 
-            const std::string& conf, const std::string& my_ip, int port);
+            const std::string& conf, const std::string& my_ip, int port,
+            const common_rpc::Space& space);
   // Impelements Service methods
   void write(const raft_rpc::BlockRequest* request,
              raft_rpc::BlockResponse* response, butil::IOBuf* data,
@@ -149,6 +151,7 @@ class Block : public braft::StateMachine {
   std::string _conf;
   int _port;
   bool _check_term;
+  common_rpc::Space _space;
 };
 
 
@@ -167,7 +170,8 @@ class RaftManager {
   std::string StartRaftServer(const std::string& root_path,
                               const std::string& group,
                               const std::string& conf, 
-                              const std::string& my_ip, int port);
+                              const std::string& my_ip, int port,
+                              const common_rpc::Space& space);
 
   static RaftManager& GetInstance();
  private:

@@ -8,10 +8,10 @@
 #include <string>
 #include <vector>
 
+#include "common/common_type.h"
 #include "service/router/partition_connection.h"
+#include "utils/numeric_util.h"
 #include "utils/one_writer_multi_reader_map.h"
-#include "utils/random.h"
-#include "utils/hash_algo.h"
 
 inline uint32_t GetPartitionId(const std::string& key, int partition_num) {
   return StrHashUint64(key) % partition_num;
@@ -29,11 +29,19 @@ class SpaceConnection {
 
   std::string Init(const common_rpc::Space& space);
 
-  std::string GetDocs(const std::vector<std::string>& docs_key,
-                      std::map<std::string, common_rpc::MockDoc>& docs_res);
+  std::map<std::string, std::string> UpsertDocs(const std::map<int, DocsGroup> docs_grps,
+                                                std::string& msg, int test_id);
 
-  std::map<std::string, std::string> UpsertDocs(
-      const std::map<int, DocsGroup> docs_grps, std::string& msg, int test_id);
+  std::map<std::string, std::string> DeleteDocs(
+      const std::map<int, std::vector<std::string>>& idx_keys_mp, std::string& msg);
+
+  std::map<std::string, std::string> GetDocs(
+      const std::map<int, std::vector<std::string>>& idx_keys_mp,
+      std::map<std::string, common_rpc::Document>& docs_res);
+
+  DType id_type() { return _id_type; }
+
+  const common_rpc::Space& pb_space() { return _pb_space; };
 
  private:
   common_rpc::Space _pb_space;
@@ -41,4 +49,5 @@ class SpaceConnection {
   std::vector<std::unique_ptr<PartitionConnetion>> _partition_list;
   std::string _db_name;
   std::string _space_name;
+  DType _id_type = DType::UNDEFINE;
 };

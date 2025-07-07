@@ -1,5 +1,5 @@
 #include <gflags/gflags.h>
-#include <butil/logging.h>
+#include "utils/log.h"
 #include <brpc/channel.h>
 #include <brpc/server.h>
 #include <thread>

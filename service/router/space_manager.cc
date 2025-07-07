@@ -13,10 +13,11 @@
 #include "config/conf.h"
 #include "raft_store/raft_client.h"
 #include "utils/one_writer_multi_reader_map.h"
-#include "utils/random.h"
+#include "utils/numeric_util.h"
+#include "utils/log.h"
 
 std::string SpaceManager::Init(int16_t max_space_num,
-                               std::shared_ptr<brpc::EtcdClient>& etcd_client) {
+                               brpc::EtcdClient* etcd_client) {
   std::string msg;
   _spaces_conn.reserve(max_space_num);
   this->_etcd_client = etcd_client;
@@ -139,6 +140,7 @@ std::shared_ptr<SpaceConnection> SpaceManager::GetSpaceConn(
   return space_conn;
 }
 
+/*
 std::map<std::string, common_rpc::MockDoc> SpaceManager::GetDocsFromPs(
     const std::string& space_key, const std::vector<std::string>& keys,
     std::string& msg) {
@@ -151,43 +153,65 @@ std::map<std::string, common_rpc::MockDoc> SpaceManager::GetDocsFromPs(
   msg = space_conn->GetDocs(keys, docs_res);
   return docs_res;
 }
+*/
 
 std::map<std::string, std::string> SpaceManager::UpsertDocsToPs(
     const std::string& space_key, const std::map<int, DocsGroup>& docs_groups,
     std::string& msg, int test_id) {
   auto space_conn = GetSpaceConn(space_key, msg);
   if (msg.size() > 0 || space_conn == nullptr) {
-    return {};
+    std::map<std::string, std::string> res_mp;
+    msg = "space_key:" + space_key + " is not exist";
+    LOG(ERROR) << msg;
+    for (const auto& [grp_idx, docs_grp] : docs_groups) {
+      for (const auto& pb_doc_info : docs_grp._pb_doc_infos) {
+        res_mp[pb_doc_info._key] = msg;
+      }
+    }
+    return res_mp;
   };
   return space_conn->UpsertDocs(docs_groups, msg, test_id);
 }
 
-std::map<int, DocsGroup> SpaceManager::SplitDocs(
-    const google::protobuf::RepeatedPtrField<common_rpc::MockDoc>& docs,
-    int partition_num) {
+std::map<int, DocsGroup> SpaceManager::HashDocs(
+    const google::protobuf::RepeatedPtrField<common_rpc::Document>& docs,
+    std::vector<std::string> doc_keys, int partition_num) {
   std::map<int, DocsGroup> idx_to_docs_groups;
-  for (const auto& doc : docs) {
-    int partition_id = GetPartitionId(doc.key(), partition_num);
+
+  for (int i = 0; i < doc_keys.size(); ++i) {
+    const common_rpc::Document& doc = docs.Get(i);
+    int partition_id = GetPartitionId(doc_keys[i], partition_num);
+    if (idx_to_docs_groups.count(partition_id) == 0) {
+      idx_to_docs_groups[partition_id] = DocsGroup();
+      idx_to_docs_groups[partition_id]._partition_id = partition_id;
+    }
+  }
+  for (int i = 0; i < docs.size(); ++i) {
+    const common_rpc::Document& doc = docs.Get(i);
+    int partition_id = GetPartitionId(doc_keys[i], partition_num);
     if (idx_to_docs_groups.count(partition_id) == 0) {
       idx_to_docs_groups[partition_id] = DocsGroup();
       idx_to_docs_groups[partition_id]._partition_id = partition_id;
     }
     auto& docs_grp = idx_to_docs_groups[partition_id];
-    docs_grp._data_len += doc.val().size();
-    ++docs_grp._doc_num;
-  }
-  for (auto& [idx, docs_group] : idx_to_docs_groups) {
-    docs_group._data.reserve(docs_group._data_len);
-    docs_group._key_vlen.reserve(docs_group._doc_num);
-  }
-  for (const auto& doc : docs) {
-    int partition_id = GetPartitionId(doc.key(), partition_num);
-    auto& docs_grp = idx_to_docs_groups[partition_id];
-    docs_grp._data += doc.val();
-    docs_grp._key_vlen.emplace_back(doc.key(), doc.val().size());
+    docs_grp._pb_doc_infos.push_back({doc_keys[i], &doc}); 
   }
   return idx_to_docs_groups;
 }
+
+std::map<int, std::vector<std::string>> SpaceManager::HashKeys(
+    const google::protobuf::RepeatedPtrField<std::string>& doc_keys, int partition_num) {
+  std::map<int, std::vector<std::string>> idx_to_keys;
+  for (const auto& doc_key : doc_keys) {
+    int partition_id = GetPartitionId(doc_key, partition_num);
+    if (idx_to_keys.count(partition_id) == 0) {
+      idx_to_keys[partition_id] = std::vector<std::string>();
+    }
+    idx_to_keys[partition_id].push_back(doc_key);
+  }
+  return idx_to_keys;
+}
+
 
 std::string SpaceManager::SpaceJsonToPb(const std::string& space_json,
                                         common_rpc::Space& pb_space) {

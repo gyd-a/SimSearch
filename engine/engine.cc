@@ -1,7 +1,7 @@
 
 #include <butil/file_util.h>
-#include <butil/logging.h>
-#include <engine/engine.h>
+#include "utils/log.h"
+#include "engine/engine.h"
 #include <errno.h>   // errno
 #include <fcntl.h>   // open
 #include <unistd.h>  // read, write, lseek, close
@@ -15,6 +15,8 @@
 #include <vector>
 
 #include "utils/file_tool.h"
+
+#include "c_api/use_gamma.h"
 
 Engine& Engine::GetInstance() {
   static Engine engine;

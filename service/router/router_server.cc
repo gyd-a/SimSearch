@@ -5,6 +5,7 @@
 
 #include "service/router/router_server.h"
 #include "config/conf.h"
+#include "utils/log.h"
 
 
 bool RouterServer::Start() {

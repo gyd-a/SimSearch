@@ -3,7 +3,7 @@
 #include <mutex>
 #include <vector>
 #include <memory>
-#include "utils/hash_algo.h"
+#include "utils/numeric_util.h"
 #include "utils/one_writer_multi_reader_map.h"
 
 // 写操作，使用独占写锁

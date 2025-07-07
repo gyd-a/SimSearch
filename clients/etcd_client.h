@@ -83,7 +83,7 @@ class EtcdClient {
 //   brpc::Channel _channel;
   bthread_t _keep_alive_bt;
   std::vector<std::unique_ptr<brpc::Channel>> _chan_list;
-  int8_t _chan_size;
+  int _chan_size;
 };
 
 std::string GetRangeEnd(const std::string& key);

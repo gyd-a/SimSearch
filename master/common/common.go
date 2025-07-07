@@ -30,18 +30,24 @@ func GetIPList(keyByteList [][]byte) []string {
 	return result
 }
 
-func GetPsNodeName(IP string, Port, Id int) string {
-	return fmt.Sprintf(":%d:%s:%d", Id, IP, Port)
+func GetPsNodeName(IP string, Port int) string {
+	return fmt.Sprintf(":%s:%d:", IP, Port)
+}
+
+func GetPsRegisterKey(IP string, Port, Id int) string {
+	// key: /nodes/ps/:172.24.131.15:8081:1
+	key := fmt.Sprintf("%s/%s%d", config.PsNodesPrefix, GetPsNodeName(IP, Port), Id)
+	return key
 }
 
 func ParsePsRegisterKey(key string) (IP string, Port, Id int) {
-	// key: /nodes/ps/:1:172.24.131.15:8081
+	// key: /nodes/ps/:172.24.131.15:8081:1
 	// val: rpc_port
 	// TODO: key format check
 	parts := strings.Split(key, ":")
-	IP = parts[2]
-	Id, _ = strconv.Atoi(parts[1])
-	Port, _ = strconv.Atoi(parts[3])
+	IP = parts[1]
+	Id, _ = strconv.Atoi(parts[3])
+	Port, _ = strconv.Atoi(parts[2])
 	return IP, Port, Id
 }
 
@@ -53,7 +59,7 @@ func GetRouterNodeEtcdKey(key string) (IP string, port int) {
 }
 
 func GetErrPsNodeEtcdKey(IP string, Port, Id int) string {
-	etcdKey := fmt.Sprintf("%s/%s", config.ErrPsNodesPrefix, GetPsNodeName(IP, Port, Id))
+	etcdKey := fmt.Sprintf("%s/%s%d", config.ErrPsNodesPrefix, GetPsNodeName(IP, Port), Id)
 	return etcdKey
 }
 

@@ -85,7 +85,7 @@ int main(int argc, char* argv[]) {
   }
   LOG(INFO) << "Router Current local IP address: " << cur_IP;
 
-  LocalSpaces::GetInstance().Init(_router_store_path, "local_spaces.json");
+  LocalSpaces::GetInstance().Init(_router_store_dir, "local_spaces.json");
 
   std::string router_node_key = GenRouterNodeKey(cur_IP, _router_rpc_port);
   std::shared_ptr<brpc::EtcdClient> etcd_cli(new brpc::EtcdClient());

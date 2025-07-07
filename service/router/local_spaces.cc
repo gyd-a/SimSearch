@@ -11,6 +11,7 @@
 #include "idl/gen_idl/rpc_service_idl/router_rpc.pb.h"
 #include "json2pb/json_to_pb.h"
 #include "json2pb/pb_to_json.h"
+#include "utils/log.h"
 
 bool LocalSpaces::Init(const std::string& path, const std::string& filename) {
   _path = path;

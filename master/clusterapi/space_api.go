@@ -19,7 +19,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func ValidateNameAndGetIdlePsNode(ctx context.Context, space *entity.Space, etcdCli *EtcdCli) (idlePsList []entity.Replica, e_str string) {
+func ValidateNameAndGetIdlePsNode(ctx context.Context, space *entity.InnerSpace, etcdCli *EtcdCli) (idlePsList []entity.Replica, e_str string) {
 	psKeys, psVals, _ := etcdCli.PrefixScan(ctx, cfg.PsNodesPrefix)
 	errPsKeys, errPsVals, _ := etcdCli.PrefixScan(ctx, cfg.ErrPsNodesPrefix)
 
@@ -73,7 +73,7 @@ func HttpOneNode(args taskArgs) (resp entity.CommonResponse, err_str string) {
 	return resp, err_str
 }
 
-func ParallelCreatePsSpace(space *entity.Space) (failedPsIdxs []int) {
+func ParallelCreatePsSpace(space *entity.InnerSpace) (failedPsIdxs []int) {
 	// 收集所有任务
 	var tasks []taskArgs
 	for _, partition := range space.Partitions {
@@ -101,7 +101,8 @@ func ParallelCreatePsSpace(space *entity.Space) (failedPsIdxs []int) {
 	return failedPsIdxs
 }
 
-func ParallelDeletePsSpace(ctx context.Context, space *entity.Space) (failedPsIdxs []int) {
+
+func ParallelDeletePsSpace(ctx context.Context, space *entity.InnerSpace) (failedPsIdxs []int) {
 	req := entity.DeleteSpaceRequest{
 		DbName:    space.DbName,
 		SpaceName: space.SpaceName,
@@ -155,7 +156,7 @@ func DeleteRouterSpace(ctx context.Context, etcdCli *EtcdCli, dbName, spaceName 
 	}
 }
 
-func AddRouterSpace(ctx context.Context, etcdCli *EtcdCli, space *entity.Space) (e_str string) {
+func AddRouterSpace(ctx context.Context, etcdCli *EtcdCli, space *entity.InnerSpace) (e_str string) {
 	router_keys, router_vals, _ := etcdCli.PrefixScan(ctx, cfg.RouterNodesPrefix)
 	routerReplicaList := entity.RouterReplicaList{}
 	routerReplicaList.DeserializeFromByte(router_keys, router_vals)
@@ -184,7 +185,7 @@ func AddRouterSpace(ctx context.Context, etcdCli *EtcdCli, space *entity.Space) 
 	return ""
 }
 
-func PutNodesErrInfoToEtcd(ctx context.Context, etcdCli *EtcdCli, space *entity.Space,
+func PutNodesErrInfoToEtcd(ctx context.Context, etcdCli *EtcdCli, space *entity.InnerSpace,
 	failedIdxs []int, errMsg string) (failedNodesStr string) {
 	if len(failedIdxs) > 0 {
 		for _, idx := range failedIdxs {
@@ -198,11 +199,11 @@ func PutNodesErrInfoToEtcd(ctx context.Context, etcdCli *EtcdCli, space *entity.
 	return failedNodesStr
 }
 
-func CreatePsSpaceImpl(ctx context.Context, etcdCli *EtcdCli, space *entity.Space,
+func CreatePsSpaceImpl(ctx context.Context, etcdCli *EtcdCli, space *entity.InnerSpace,
 	idlePsList *[]entity.Replica) (isAbledDdl bool, e_str string) {
 	log_prefix := fmt.Sprintf("CreateSpace(db_name:%s, space_name:%s)", space.DbName, space.SpaceName)
 	timeStr, _, _ := timeutil.GetCurTime()
-	space.CreateTime, space.UpdateTime = timeStr, timeStr
+	space.Ctime, space.Mtime = timeStr, timeStr
 	if len(*idlePsList) < space.PartitionNum*space.ReplicaNum {
 		e_str = fmt.Sprintf("%s, not enough idle PS nodes, need %d, but only %d, Create space failed",
 			log_prefix, space.PartitionNum*space.ReplicaNum, len(*idlePsList))
@@ -257,13 +258,15 @@ func CreatePsSpaceImpl(ctx context.Context, etcdCli *EtcdCli, space *entity.Spac
 	return true, ""
 }
 
-func (ca *ClusterAPI) ValidateCreateSpaceParam(c *gin.Context) (space entity.Space, err_str string) {
+func (ca *ClusterAPI) ValidateCreateSpaceParam(c *gin.Context) (space entity.InnerSpace, err_str string) {
 	// 尝试将请求中的 JSON 绑定到 space 结构体
-	if err := c.ShouldBindJSON(&space); err != nil {
+	apiSpace := entity.ApiSpace{}
+	if err := c.ShouldBindJSON(&apiSpace); err != nil {
 		log.Errorf("create_space api request params error: %v", err)
 		return space, "params error " + err.Error()
 	}
-	if unvalid_str := space.Validate(); len(unvalid_str) > 0 {
+	space = apiSpace.ToInnerSpace()
+	if unvalid_str := apiSpace.Validate(); len(unvalid_str) > 0 {
 		return space, unvalid_str
 	}
 	return space, ""
@@ -272,7 +275,7 @@ func (ca *ClusterAPI) ValidateCreateSpaceParam(c *gin.Context) (space entity.Spa
 func (ca *ClusterAPI) createSpace(c *gin.Context) {
 	log.Info("-------------create_space api-------------------")
 	ctx, code, msg_str, ddlLocker := context.Background(), 10, "", (*etcdcluster.EtcdLocker)(nil)
-	space, isDdlAbled, idlePsNode, err := entity.Space{}, true, []entity.Replica{}, error(nil)
+	space, isDdlAbled, idlePsNode, err := entity.InnerSpace{}, true, []entity.Replica{}, error(nil)
 	defer func() {
 		if ddlLocker != nil {
 			ddlLocker.UnlockAndClose(ctx)
@@ -282,6 +285,7 @@ func (ca *ClusterAPI) createSpace(c *gin.Context) {
 	space, msg_str = ca.ValidateCreateSpaceParam(c)
 	log_prefix := fmt.Sprintf("CreateSpace(db_name:%s, space_name:%s)", space.DbName, space.SpaceName)
 	if msg_str != "" {
+		log.Error("%s, Validate create space format error: %s", log_prefix, msg_str)
 		return
 	}
 	ddlLocker, err = etcdcluster.GetEtcdLocker(ca.etcdCli.GetCli(), cfg.DdlLockKey)
@@ -369,7 +373,7 @@ func (ca *ClusterAPI) deleteSpace(c *gin.Context) {
 			log.Error(msg_str)
 			return
 		}
-		space := entity.Space{}
+		space := entity.InnerSpace{}
 		if err = space.DeserializeFromByte(space_detail); err != nil {
 			msg_str = fmt.Sprintf("%s, deserialize space_json failed, err: %v; ", log_prefix, err)
 			monitor.AddErrorInfo("deserialize_space_json", 3, msg_str)

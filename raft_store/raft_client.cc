@@ -15,6 +15,7 @@
 // #include "idl/gen_idl/raft_store_idl/raft_store_idl.pb.h"  // BlockService
 #include "common/brpc_options.h"
 #include "idl/gen_idl/rpc_service_idl/raft_rpc.pb.h"
+#include "utils/log.h"
 
 std::string RaftClient::Write(const raft_rpc::BlockRequest& req,
                               raft_rpc::BlockResponse& resp,

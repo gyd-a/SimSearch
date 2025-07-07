@@ -12,7 +12,7 @@
 
 #include "config/conf.h"
 #include "raft_store/raft_store.h"
-
+#include "utils/log.h"
 
 
 void RaftRpcImpl::write(::google::protobuf::RpcController* controller,

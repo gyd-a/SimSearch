@@ -11,8 +11,9 @@ message MasterGenIdRequest {
 }
 
 message MasterGenIdResponse {
-    optional int64  id      = 1;
-    optional string msg     = 2;
+    optional int32                                 code = 1;
+	optional string                                 msg = 2;
+    optional int64                                   id = 3;
 }
 
 message SpaceListRequest {
@@ -22,5 +23,17 @@ message SpaceListRequest {
 message SpaceListRespone {
 	optional int32                                 code = 1;
 	optional string                                 msg = 2;
-	repeated common_rpc.Space       space_list = 3;
+	repeated common_rpc.Space                space_list = 3;
+}
+
+message RegisterRequest {
+    optional string                                  ip = 1;
+    optional int64                                 port = 2;
+    optional int64                                   id = 3;
+}
+
+message RegisterResponse {
+    optional int32                                 code = 1;
+    optional string                                 msg = 2;
+    optional string                        register_key = 3;
 }

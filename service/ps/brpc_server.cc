@@ -4,6 +4,7 @@
 #include "config/conf.h"
 #include "service/ps/brpc_server.h"
 #include "raft_store/raft_store.h"
+#include "utils/log.h"
 
 std::string BrpcServer::Start() {
   if (_server.AddService(&_ps_impl, brpc::SERVER_DOESNT_OWN_SERVICE) != 0) {

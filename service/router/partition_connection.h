@@ -7,16 +7,22 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <map>
 
 #include "clients/ps_rpc_client.h"
 #include "raft_store/raft_client.h"
 #include "utils/one_writer_multi_reader_map.h"
 
+struct PbDocInfo {
+  PbDocInfo(const std::string& key, const common_rpc::Document* pb_doc): _key(key), _pb_doc(pb_doc) {}
+  std::string _key;
+  const common_rpc::Document* _pb_doc;
+  // std::string binary;
+};
+
 struct DocsGroup {
   int _partition_id;
-  int _data_len = 0;
-  int _doc_num = 0;
-  std::vector<std::pair<std::string, int16_t>> _key_vlen;
+  std::vector<PbDocInfo> _pb_doc_infos;   // _id, doc
   std::string _data;
 };
 
@@ -36,11 +42,17 @@ class PartitionConnetion {
 
   std::string Init(const common_rpc::Partition& pb_partition);
 
-  std::string GetDocs(const std::vector<std::string>& doc_keys,
-                      common_rpc::MockGetResponse& ps_resp);
+  // std::string GetDocs(const std::vector<std::string>& doc_keys,
+  //                     common_rpc::MockGetResponse& ps_resp);
 
-  std::vector<std::string> UpsertDocs(const DocsGroup& docs_grp,
-                                      std::string& msg, int test_id);
+  std::map<std::string, std::string> UpsertDocs(const DocsGroup& docs_grp,
+                                                std::string& msg, int test_id);
+
+  std::map<std::string, std::string> DeleteDocs(const std::vector<std::string>& doc_keys,
+                                                std::string& msg);
+
+  std::map<std::string, std::string> GetDocs(const std::vector<std::string>& doc_keys,
+      std::map<std::string, common_rpc::Document>& docs_mp);
 
   uint32_t GetReplicaIdx(int replicas_num);
 

@@ -49,6 +49,7 @@ const (
 	GenPsIdKey    = "gen_ps_id"
 	GenSpaceIdKey = "gen_space_id"
 	IdBaseVal     = 0
+	PsNodeTTL     = 5 // 5s
 )
 
 // SetConfigVersion set the version, time and commit id of build
@@ -80,6 +81,13 @@ const (
 	LocalSingleAddr = "127.0.0.1"
 	LocalCastAddr   = "0.0.0.0"
 )
+
+var DocKeyTypes = []string{"long", "string"}
+var ScalarFieldTypes = []string{"int", "long", "float", "double", "string", "stringarray"}
+var ScalarIndexTypes = []string{"SCALAR"}
+var VectorFieldTypes = []string{"vector"}
+var VectorIndexTypes = []string{"IVFPQ", "HNSW", "VEARCH", "IVFFLAT", "BINARYIVF", "FLAT"}
+var MetricType = []string{"L2", "InnerProduct"}
 
 type Base struct {
 	Log         string   `toml:"log,omitempty" json:"log"`

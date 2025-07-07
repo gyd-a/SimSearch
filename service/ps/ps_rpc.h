@@ -5,6 +5,7 @@
 #include <butil/sys_byteorder.h>  // butil::NetToHost32
 #include <fcntl.h>                // open
 #include <sys/types.h>            // O_CREAT
+#include <gflags/gflags.h>
 
 #include <atomic>
 

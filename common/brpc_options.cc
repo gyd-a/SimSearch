@@ -1,4 +1,5 @@
 #include "common/brpc_options.h"
+#include "utils/log.h"
 
 bool BrpcOptions::Init(const std::string& addr_port,
                        const brpc::ChannelOptions* options) {

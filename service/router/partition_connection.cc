@@ -13,9 +13,10 @@
 #include "clients/ps_rpc_client.h"
 #include "common/common.h"
 #include "raft_store/raft_client.h"
-#include "utils/hash_algo.h"
+#include "utils/numeric_util.h"
 #include "utils/one_writer_multi_reader_map.h"
-#include "utils/random.h"
+#include "utils/numeric_util.h"
+#include "utils/log.h"
 
 
 PartitionOpt::PartitionOpt(const common_rpc::Partition& pb_partition) {
@@ -66,6 +67,7 @@ std::string PartitionConnetion::Init(
   return msg;
 }
 
+/*
 std::string PartitionConnetion::GetDocs(
     const std::vector<std::string>& doc_keys,
     common_rpc::MockGetResponse& ps_resp) {
@@ -89,35 +91,107 @@ std::string PartitionConnetion::GetDocs(
   LOG(ERROR) << "Router GetDocs from Ps error, msg:" << one_msg;
   return one_msg;
 }
+*/
 
-std::vector<std::string> PartitionConnetion::UpsertDocs(
+std::map<std::string, std::string> PartitionConnetion::UpsertDocs(
     const DocsGroup& docs_grp, std::string& msg, int test_id) {
+  std::map<std::string, std::string> err_docs;
   raft_rpc::BlockRequest req;
-  raft_rpc::BlockResponse resp;
-  req.set_test_id(test_id);
   req.set_db_name(_db_name);
   req.set_space_name(_space_name);
-  req.set_write_type(raft_rpc::WriteType::UPSERT);
+  req.set_impl_type(raft_rpc::ImplType::UPSERT);
   req.set_key_type(raft_rpc::KeyType::STRING);
-  auto* doc_infos = req.mutable_docs_info();
-  for (const auto& [key, doc_len] : docs_grp._key_vlen) {
-    auto* doc_info = doc_infos->Add();
-    doc_info->set_key(key);
-    doc_info->set_doc_len(doc_len);
-  }
-  std::vector<std::string> msgs(docs_grp._key_vlen.size());
-  msg = _raft_client.Write(req, resp, docs_grp._data);
-  const auto& ret_docs_info = resp.docs_info();
-  for (int i = 0; i < ret_docs_info.size(); ++i) {
-    if (ret_docs_info[i].msg().size() > 0) {
-      LOG(ERROR) << "db_name:" << _db_name << ", space_name:" << _space_name
-                 << ", upsert doc key:" << ret_docs_info[i].key()
-                 << " failed, msg:" << ret_docs_info[i].msg();
+  for (const auto& one : docs_grp._pb_doc_infos) {
+    std::string binary, one_msg;
+    if (!one._pb_doc->SerializeToString(&binary)) {
+      one_msg = "SerializeToString Document failed";
+      LOG(ERROR) << one_msg;
+      err_docs[one._key] = one_msg;
+      continue;
     }
-    msgs[i] = ret_docs_info[i].msg();
+    req.set_key(one._key);
+    raft_rpc::BlockResponse resp;
+    one_msg = _raft_client.Write(req, resp, binary);
+    if (one_msg.size() > 0 || resp.success() == false) {
+      LOG(ERROR) << "raft Write error, imp_msg:" << one_msg << ", ret_msg:" 
+                 << resp.msg();
+      err_docs[one._key] = one_msg + ", ret_msg:" + resp.msg();
+      continue;
+    }
+    LOG(INFO) << "***** raft Write success, key:" << one._key << " *******";
   }
-  return msgs;
+  return err_docs;
 }
+
+std::map<std::string, std::string> PartitionConnetion::DeleteDocs(
+    const std::vector<std::string>& doc_keys, std::string& msg) {
+  std::map<std::string, std::string> err_ids;
+  for (const auto& one_key : doc_keys) {
+    
+  }
+
+  return err_ids;
+}
+
+
+std::map<std::string, std::string> PartitionConnetion::GetDocs(
+    const std::vector<std::string>& doc_keys,
+    std::map<std::string, common_rpc::Document>& docs_mp) {
+  std::map<std::string, std::string> err_docs;
+  auto add_err_msg = [&err_docs, doc_keys](const std::string& msg) {
+    for (const auto& key : doc_keys) {
+      err_docs[key] = msg;
+    }
+  };
+  auto partition_opt = _partition_opt[_idx];
+  std::string one_msg;
+  if (partition_opt == nullptr) {
+    one_msg = "***** two buffer partion_opt is null *****";
+    add_err_msg(one_msg);
+    return err_docs;
+  }
+  int replica_idx = -1;
+  for (int i = 0; i < _retries; ++i) {
+    if (replica_idx == -1) {
+      replica_idx = GetReplicaIdx(partition_opt->_replicas_num);
+    } else {
+      replica_idx = (++replica_idx) % partition_opt->_replicas_num;
+    }
+    auto& ps_cli = partition_opt->_ps_list[replica_idx];
+    common_rpc::GetResponse ps_resp;
+    one_msg = ps_cli.Get(doc_keys, ps_resp);
+    if (one_msg.size() == 0) {
+      std::map<std::string, int> succ_key_to_idx, failed_key_to_idx;
+      for (int i = 0; i < ps_resp.documents_size(); ++i) {
+        const auto& doc = ps_resp.documents(i);
+        succ_key_to_idx[doc._id()] = i;
+      }
+      for (int i = 0; i < ps_resp.failed_docs_size(); ++i) {
+        const auto& doc = ps_resp.failed_docs(i);
+        failed_key_to_idx[doc._id()] = i;
+      }
+      for (int i = 0; i < doc_keys.size(); ++i) {
+        const auto& key = doc_keys[i];
+        if (succ_key_to_idx.find(key) != succ_key_to_idx.end()) {
+          docs_mp[key] = ps_resp.documents(succ_key_to_idx[key]);
+        } else if (failed_key_to_idx.find(key) != failed_key_to_idx.end()) {
+          err_docs[key] = ps_resp.failed_docs(failed_key_to_idx[key]).msg();
+        } else {
+          err_docs[key] = "Key not found in response";
+        }
+      }
+      LOG(INFO) << "****** GetDocs from Ps success ******";
+      return err_docs;
+    } else {
+      LOG(ERROR) << "GetDocs from Ps error, msg:" << one_msg
+                 << ", replica_idx:" << replica_idx;
+    }
+  }
+  add_err_msg("GetDocs from Ps error, msg:" + one_msg);
+  LOG(ERROR) << "Router GetDocs from Ps error, msg:" << one_msg;
+  return err_docs;
+}
+
 
 std::string PartitionConnetion::UpdatePsConn(
     const common_rpc::Partition& pb_partition) {

@@ -1,13 +1,13 @@
 #include "service/ps/local_mata.h"
 
 #include <butil/file_util.h>
-#include <butil/logging.h>
 #include <json2pb/json_to_pb.h>
 
 #include <fstream>
 #include <string>
 
 #include "json2pb/pb_to_json.h"
+#include "utils/log.h"
 
 PsLocalNodeMata::PsLocalNodeMata() {}
 
@@ -43,8 +43,7 @@ bool PsLocalNodeMata::Init(const std::string& dir_path) {
               << "] successful from file, node_info_file:" << _node_info_file;
     std::ifstream space_ifs(_space_schema_file);
     if (!space_ifs.is_open()) {
-      LOG(INFO) << "not has create_space_req.json file, file_path:"
-                << _space_schema_file;
+      LOG(INFO) << "not has create_space_req.json file, file_path:" << _space_schema_file;
       return true;
     }
     std::string space_json((std::istreambuf_iterator<char>(space_ifs)),
@@ -64,21 +63,6 @@ bool PsLocalNodeMata::IsLoadFromFile() {
     return true;
   }
   return false;
-}
-
-bool PsLocalNodeMata::SetPsId(int64_t ps_node_id) {
-  _ps_node_info.set_ps_id(ps_node_id);
-  return true;
-}
-
-bool PsLocalNodeMata::SetPsPort(int32_t raft_port) {
-  _ps_node_info.set_ps_port(raft_port);
-  return true;
-}
-
-bool PsLocalNodeMata::SetPsIP(const std::string& ps_node_IP) {
-  _ps_node_info.set_ps_ip(ps_node_IP);
-  return true;
 }
 
 std::string PsLocalNodeMata::DumpCreateSpaceReq() {
@@ -134,16 +118,51 @@ std::string PsLocalNodeMata::DumpNodeInfo() {
   return msg;
 }
 
-int64_t PsLocalNodeMata::PsId() {
+bool PsLocalNodeMata::SetCreateSapceReq(const ps_rpc::CreateSpaceRequest& space_req) {
+  _space_req = space_req;
+  if (_space_req.space().db_name().size() > 0) {
+    _has_space = true;
+  }
+  return true;
+}
+
+std::string PsLocalNodeMata::SpaceKey() {
+  return GenSpaceKey(_space_req.space().db_name(), _space_req.space().space_name());
+}
+
+bool PsLocalNodeMata::SetPsId(int64_t ps_node_id) {
+  _ps_node_info.set_ps_id(ps_node_id);
+  return true;
+}
+
+bool PsLocalNodeMata::SetPsPort(int32_t raft_port) {
+  _ps_node_info.set_ps_port(raft_port);
+  return true;
+}
+
+bool PsLocalNodeMata::SetPsIP(const std::string& ps_node_IP) {
+  _ps_node_info.set_ps_ip(ps_node_IP);
+  return true;
+}
+
+int64_t PsLocalNodeMata::Id() {
   if (_ps_node_info.ps_id() <= 0) {
     LOG(ERROR) << "GetPsNodeId() Failed. ps_node_info is null";
   }
   return _ps_node_info.ps_id();
 }
 
-const std::string& PsLocalNodeMata::PsIP() { return _ps_node_info.ps_ip(); }
+const std::string& PsLocalNodeMata::IP() { return _ps_node_info.ps_ip(); }
 
-int32_t PsLocalNodeMata::PsPort() { return _ps_node_info.ps_port(); }
+int32_t PsLocalNodeMata::Port() { return _ps_node_info.ps_port(); }
+
+const ps_rpc::CreateSpaceRequest& PsLocalNodeMata::SpaceReq() { return _space_req; }
+
+bool PsLocalNodeMata::HasSpace() { return _has_space.load() == true ? true : false; }
+
+std::string PsLocalNodeMata::DbName() { return _space_req.space().db_name(); };
+
+std::string PsLocalNodeMata::SpaceName() { return _space_req.space().space_name(); };
 
 std::string PsLocalNodeMata::DeleteSpace() {
   LOG(WARNING) << "PsLocalNodeMata delete space:" << _space_req.space().space_name();
@@ -151,4 +170,15 @@ std::string PsLocalNodeMata::DeleteSpace() {
   butil::DeleteFile(butil::FilePath(_space_schema_file), false);
   _has_space = false;
   return "";
+}
+
+std::string PsLocalNodeMata::DeleteNodeInfo() {
+  LOG(WARNING) << "PsLocalNodeMata delete node info, file_path:" << _node_info_file;
+  _ps_node_info.Clear();
+  butil::DeleteFile(butil::FilePath(_node_info_file), false);
+  return "";
+}
+
+const common_rpc::Space& PsLocalNodeMata::Space() {
+  return _space_req.space();
 }

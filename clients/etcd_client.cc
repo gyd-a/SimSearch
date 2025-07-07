@@ -7,7 +7,8 @@
 #include "butil/string_splitter.h"
 #include "json2pb/json_to_pb.h"
 #include "json2pb/pb_to_json.h"
-#include "utils/random.h"
+#include "utils/numeric_util.h"
+#include "utils/log.h"
 
 namespace brpc {
 

@@ -7,7 +7,7 @@
 
 #include "idl/gen_idl/rpc_service_idl/common_rpc.pb.h"
 #include "idl/gen_idl/rpc_service_idl/ps_rpc.pb.h"
-
+#include "utils/log.h"
 
 template <typename Stub, typename Request, typename Response>
 std::string QueryPsRpcImp(ps_rpc::PsService_Stub* stub,
@@ -54,10 +54,9 @@ std::string PsRpcClient::Init(const std::string& addr_port,
 std::string PsRpcClient::Get(const std::vector<std::string>& keys,
                              common_rpc::GetResponse& resp) {
   common_rpc::GetRequest req;
-  for (int i = 0; i < keys.size(); ++i) {
-    // req.add_keys(keys[i]);
+  for (const auto& key : keys) {
+    req.add__ids(key);
   }
-  // req.set_key_type(1);
   if (_brpc_opt._stub == nullptr) {
     std::string msg =
         "addr_port:" + _brpc_opt._addr_port + " stub is nullptr, not run Get()";

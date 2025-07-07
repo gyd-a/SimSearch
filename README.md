@@ -14,17 +14,20 @@ TODO:
 8、进程退出保存etcd，
 9、监控问题、健康借口
 10、ps有space启动注册master失败后还可以启动
-11、ps注册master ip/port重复检测，防止一个机器中起了多个相同的端口
+11、ps注册master ip/port重复检测，防止一个机器中起了多个相同的端口          --完成
 
 
 介入gamma问题:  
-1、接入问题，
-2、add、delete、get、search开发，
-3、rocksdb全算量dump问题；
+1、接入问题，                                                        --完成
+2、create/delete space                                             --完成
+3、add、delete
+4、get                                                            
+5、search
+4、rocksdb全算量dump问题；
 
 
 不紧急的特性：
-1、create/delete space 发生错误时，保存状态锁表
+1、create/delete space 发生错误时，保存状态锁表                           --完成
 2、ps退出摘掉etcd
 3、鉴权问题
 4、部署问题
@@ -79,4 +82,5 @@ SimSearch
 2) 将数据写入到新集权etcd;
 3) 对ps修改 配置
 4）对router修改 配置
+
 
