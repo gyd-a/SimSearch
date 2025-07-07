@@ -21,7 +21,6 @@ DEFINE_string(port, "", "running port");
 DEFINE_string(conf, "config.toml", "conf path");
 DEFINE_string(log_dir, "", "log_dir");
 
-
 int main(int argc, char* argv[]) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   FLAGS_log_dir = "./logs";
